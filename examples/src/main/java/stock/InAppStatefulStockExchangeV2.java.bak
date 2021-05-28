@@ -1,0 +1,570 @@
+package stock;
+
+import org.apache.commons.math3.random.RandomDataGenerator;
+import org.apache.flink.api.common.functions.RichFlatMapFunction;
+import org.apache.flink.api.common.state.MapState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.api.java.typeutils.GenericTypeInfo;
+import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.memory.MemoryStateBackend;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011;
+import org.apache.flink.util.Collector;
+import stock.sources.SSERealRateSourceFunctionKV;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
+import static stock.utils.sortMapBykeyAsc;
+import static stock.utils.sortMapBykeyDesc;
+
+public class InAppStatefulStockExchangeV2 {
+    private static final int Order_No = 0;
+    private static final int Tran_Maint_Code = 1;
+    private static final int Last_Upd_Time = 2;
+    private static final int Order_Price = 3;
+    private static final int Order_Exec_Vol = 4;
+    private static final int Order_Vol = 5;
+    private static final int Sec_Code = 6;
+    private static final int Trade_Dir = 7;
+
+    private static final String INPUT_STREAM_ID = "stock_sb";
+    private static final String OUTPUT_STREAM_ID = "stock_cj";
+    private static final String KAFKA_BROKERS = "localhost:9092";
+
+    private static final String FILTER_KEY1 = "D";
+    private static final String FILTER_KEY2 = "X";
+    private static final String FILTER_KEY3 = "";
+
+    public static void main(String[] args) throws Exception {
+
+        // Checking input parameters
+        final ParameterTool params = ParameterTool.fromArgs(args);
+
+        // set up the execution environment
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+//        env.setStateBackend(new FsStateBackend("file:///home/samza/states"));
+//        env.setStateBackend(new FsStateBackend("file:///home/myc/workspace/flink-related/states"));
+
+        env.setStateBackend(new MemoryStateBackend(100000000));
+
+        // make parameters available in the web interface
+        env.getConfig().setGlobalJobParameters(params);
+
+//        env.enableCheckpointing(1000);
+//        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+
+        FlinkKafkaProducer011<Tuple2<String, String>> kafkaProducer = new FlinkKafkaProducer011<Tuple2<String, String>>(
+                KAFKA_BROKERS, OUTPUT_STREAM_ID, new KafkaWithTsMsgSchema());
+        kafkaProducer.setWriteTimestampToKafka(true);
+
+//        final DataStream<Tuple3<String, String, Long>> text = env.addSource(
+//                inputConsumer).setMaxParallelism(params.getInt("mp2", 64));
+
+        final DataStream<Tuple3<String, String, Long>> text = env.addSource(
+                new SSERealRateSourceFunctionKV(
+                        params.get("source-file", "/home/samza/SSE_data/sb-50ms.txt")))
+//                    params.get("source-file", "/root/SSE-kafka-producer/sb-50ms.txt")))
+                .uid("sentence-source")
+                .setParallelism(params.getInt("p1", 1))
+                .setMaxParallelism(params.getInt("mp2", 64));
+
+
+        // split up the lines in pairs (2-tuples) containing:
+        DataStream<Tuple2<String, String>> counts = text.keyBy(0)
+                .flatMap(new MatchMaker())
+                .name("MatchMaker FlatMap")
+                .uid("flatmap")
+                .setMaxParallelism(params.getInt("mp2", 64))
+                .setParallelism(params.getInt("p2", 3))
+                .keyBy(0);
+
+        counts.addSink(kafkaProducer)
+                .name("Sink")
+                .uid("sink")
+                .setParallelism(params.getInt("p3", 1));
+
+        GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
+        // execute program
+        env.execute("Stock Exchange");
+    }
+
+    // *************************************************************************
+    // USER FUNCTIONS
+    // *************************************************************************
+
+    public static final class MatchMaker extends RichFlatMapFunction<Tuple3<String, String, Long>, Tuple2<String, String>> {
+        private static final long serialVersionUID = 1L;
+
+        private transient MapState<String, Order> stockExchangeMapSell;
+        private transient MapState<String, Order> stockExchangeMapBuy;
+        private transient MapState<String, OrderPool> test;
+
+        private RandomDataGenerator randomGen = new RandomDataGenerator();
+
+        // pool is a architecture used to do stock transaction, we can use collction.sort to sort orders by price.
+        // then we need to sort order by timestamp, im not sure how to do this now...
+        private Map<String, HashMap<Integer, ArrayList<Order>>> poolS = new HashMap<>();
+        private Map<String, HashMap<Integer, ArrayList<Order>>> poolB = new HashMap<>();
+
+        private int continuousAuction = 92500;
+        private boolean callAuctionAllowed = true;
+
+        private boolean isPoolLoaded = false;
+
+        @Override
+        public void open(Configuration config) throws Exception {
+
+            MapStateDescriptor<String, Order> buyDescriptor =
+                    new MapStateDescriptor<>("matchmaker buy", String.class, Order.class);
+
+            MapStateDescriptor<String, Order> sellDescriptor =
+                    new MapStateDescriptor<>("matchmaker sale", String.class, Order.class);
+
+            MapStateDescriptor<String, OrderPool> testDescriptor =
+                    new MapStateDescriptor<>("test", String.class, OrderPool.class);
+
+            stockExchangeMapBuy = getRuntimeContext().getMapState(buyDescriptor);
+            stockExchangeMapSell = getRuntimeContext().getMapState(sellDescriptor);
+
+            test = getRuntimeContext().getMapState(testDescriptor);
+        }
+
+        @Override
+        public void flatMap(Tuple3<String, String, Long> value, Collector<Tuple2<String, String>> out) throws Exception {
+            if (!isPoolLoaded) {
+                // load the pool in the first time app started
+                loadPool();
+                isPoolLoaded = true;
+            }
+
+            String stockOrder = value.f1;
+            String[] orderArr = stockOrder.split("\\|");
+
+            if (stockOrder.equals("CALLAUCTIONEND") && callAuctionAllowed) {
+                // start to do call auction
+                callAuction();
+                callAuctionAllowed = false;
+                return;
+            }
+
+            if (stockOrder.equals("CALLAUCTIONEND")) {
+                return;
+            }
+
+            //filter
+            if (orderArr[Tran_Maint_Code].equals(FILTER_KEY2) || orderArr[Tran_Maint_Code].equals(FILTER_KEY3)) {
+                return;
+            }
+
+            int curTime = Integer.parseInt(orderArr[Last_Upd_Time].replace(":", ""));
+
+            Order curOrder = new Order(orderArr);
+
+            if (curTime < continuousAuction) {
+                // store all orders at maps
+                if (orderArr[Tran_Maint_Code].equals("D")) {
+                    deleteOrder(curOrder, orderArr[Trade_Dir]);
+                } else {
+                    insertPool(curOrder);
+                }
+            } else {
+                Map<String, String> matchedResult = continuousStockExchange(orderArr, orderArr[Trade_Dir]);
+            }
+
+//            latency += System.currentTimeMillis() - value.f2;
+//            System.out.println("stock_id: " + value.f0 + " arrival_ts: " + value.f2 + " completion_ts: " + System.currentTimeMillis());
+
+            out.collect(new Tuple2<>(value.f0, value.f1));
+        }
+
+        private void delay(int interval) {
+            Double ranN = randomGen.nextGaussian(interval, 1);
+            ranN = ranN*1000000;
+            long delay = ranN.intValue();
+            if (delay < 0) delay = 6000000;
+            Long start = System.nanoTime();
+            while (System.nanoTime() - start < delay) {}
+        }
+
+        public void loadPool() throws Exception {
+            // load pool from state backend, then do matchmaking by use old logic
+
+
+            Iterator buyIter = stockExchangeMapBuy.iterator();
+            Iterator sellIter = stockExchangeMapSell.iterator();
+
+            while (buyIter.hasNext()) {
+                Map.Entry<String, Order> entry = (Map.Entry<String, Order>) buyIter.next();
+//                String[] curBuyerOrder = entry.getValue().split("\\|");
+//                Order curOrder = new Order(curBuyerOrder);
+                Order curOrder = entry.getValue();
+                String curSecCode = curOrder.getSecCode();
+                int curOrderPrice = curOrder.getOrderPrice();
+
+                HashMap<Integer, ArrayList<Order>> curPool = poolB.getOrDefault(curSecCode, new HashMap<>());
+                ArrayList<Order> curOrderList = curPool.getOrDefault(curOrderPrice, new ArrayList<>());
+                // need to keep pool price be sorted, so insert it into pool price
+                curOrderList.add(curOrder);
+                curPool.put(curOrderPrice, curOrderList);
+                poolB.put(curOrder.getSecCode(), curPool);
+            }
+
+            while (sellIter.hasNext()) {
+                Map.Entry<String, Order> entry = (Map.Entry<String, Order>) sellIter.next();
+//                String[] curSellerOrder = entry.getValue().split("\\|");
+//                Order curOrder = new Order(curSellerOrder);
+                Order curOrder = entry.getValue();
+                String curSecCode = curOrder.getSecCode();
+                int curOrderPrice = curOrder.getOrderPrice();
+
+                HashMap<Integer, ArrayList<Order>> curPool = poolS.getOrDefault(curSecCode, new HashMap<>());
+                ArrayList<Order> curOrderList = curPool.getOrDefault(curOrderPrice, new ArrayList<>());
+                // need to keep pool price be sorted, so insert it into pool price
+                curOrderList.add(curOrder);
+                curPool.put(curOrderPrice, curOrderList);
+                poolS.put(curOrder.getSecCode(), curPool);
+            }
+        }
+
+
+        public void callAuction() throws Exception {
+            // do call auction
+            // 1. sort buy order and sell order by price and timestamp
+            System.out.println("Start call auction");
+
+            // 2. do stock exchange on every stock id
+            for (Map.Entry poolBentry : poolB.entrySet()) {
+                String curStockId = (String) poolBentry.getKey();
+                // filter for debug
+                HashMap<Integer, ArrayList<Order>> curBuyPool = (HashMap<Integer, ArrayList<Order>>) poolBentry.getValue();
+                HashMap<Integer, ArrayList<Order>> sortedCurBuyPool = (HashMap<Integer, ArrayList<Order>>) sortMapBykeyDesc(curBuyPool);
+                // for sorted prices, do stock exchange
+                for (Map.Entry curBuyOrdersEntry : sortedCurBuyPool.entrySet()) {
+                    int curBuyPrice = (int) curBuyOrdersEntry.getKey();
+                    ArrayList<Order> curBuyOrders = (ArrayList<Order>) curBuyOrdersEntry.getValue();
+
+                    // get the sell orders from sell pool
+                    HashMap<Integer, ArrayList<Order>> curSellPool = poolS.getOrDefault(curStockId, new HashMap<>());
+                    // buyer list should descending, seller should be ascending
+                    HashMap<Integer, ArrayList<Order>> sortedCurSellPool = (HashMap<Integer, ArrayList<Order>>) sortMapBykeyAsc(curSellPool);
+
+                    // match orders
+                    for (Map.Entry curSellOrdersEntry : sortedCurSellPool.entrySet()) {
+                        int curSellPrice = (int) curSellOrdersEntry.getKey();
+                        // when matched, do transaction
+                        if (curBuyPrice >= curSellPrice) {
+                            ArrayList<Order> curSellOrders = (ArrayList<Order>) curSellOrdersEntry.getValue();
+                            stockExchange(curBuyOrders, curSellOrders);
+
+                            // add pending orders into pool again for future usage
+                            // TODO: either use sorted or unsorted, I think latter is better for isolation
+                            updatePool(curSellPool, curSellOrders, curSellPrice);
+                        }
+                    }
+                    // put updated sell pool into original pool
+                    poolS.replace(curStockId, curSellPool);
+
+                    updatePool(curBuyPool, curBuyOrders, curBuyPrice);
+                }
+                // TODO: sanity check, whether this is equal to map size
+                // put updated buy pool into original pool
+                poolB.replace(curStockId, curBuyPool);
+
+                metricsDump();
+            }
+
+            auctionFlush();
+        }
+
+        public Map<String, String> continuousStockExchange(String[] orderArr, String direction) throws Exception {
+            long start = System.currentTimeMillis();
+            Map<String, String> matchedResult = new HashMap<>();
+
+            metricsDump();
+
+            Order curOrder = new Order(orderArr);
+            // delete stock order, index still needs to be deleted
+
+            if (orderArr[Tran_Maint_Code].equals(FILTER_KEY1)) {
+                deleteOrder(curOrder, direction);
+                return matchedResult;
+            }
+
+            if (direction.equals("")) {
+                System.out.println("bad tuple received!");
+                return matchedResult;
+            }
+            if (direction.equals("B")) {
+                // put into state and index
+                stockExchangeMapBuy.put(curOrder.getOrderNo(), curOrder);
+                HashMap<Integer, ArrayList<Order>> curBuyPool = poolB.getOrDefault(curOrder.getSecCode(), new HashMap<>());
+                ArrayList<Order> curBuyOrders = curBuyPool.getOrDefault(curOrder.getOrderPrice(), new ArrayList<>());
+                curBuyOrders.add(curOrder);
+                curBuyPool.put(curOrder.getOrderPrice(), curBuyOrders);
+                poolB.put(curOrder.getSecCode(), curBuyPool);
+
+                int curBuyPrice = curOrder.getOrderPrice();
+
+                // do partial transaction
+                HashMap<Integer, ArrayList<Order>> curSellPool = poolS.getOrDefault(curOrder.getSecCode(), new HashMap<>());
+                HashMap<Integer, ArrayList<Order>> sortedCurSellPool = (HashMap<Integer, ArrayList<Order>>)
+                        sortMapBykeyAsc(curSellPool);
+
+                // match orders
+                for (Map.Entry curSellOrdersEntry : sortedCurSellPool.entrySet()) {
+                    int curSellPrice = (int) curSellOrdersEntry.getKey();
+                    // when matched, do transaction
+                    if (curBuyPrice >= curSellPrice) {
+                        ArrayList<Order> curSellOrders = (ArrayList<Order>) curSellOrdersEntry.getValue();
+                        stockExchange(curBuyOrders, curSellOrders);
+                        // add pending orders into pool again for future usage
+                        // TODO: either use sorted or unsorted, I think latter is better for isolation
+                        updatePool(curSellPool, curSellOrders, curSellPrice);
+                    }
+                }
+                poolS.replace(curOrder.getSecCode(), curSellPool);
+                updatePool(curBuyPool, curBuyOrders, curBuyPrice);
+                poolB.replace(curOrder.getSecCode(), curBuyPool);
+            } else {
+                stockExchangeMapSell.put(curOrder.getOrderNo(), curOrder);
+                HashMap<Integer, ArrayList<Order>> curSellPool = poolS.getOrDefault(curOrder.getSecCode(), new HashMap<>());
+                ArrayList<Order> curSellOrders = curSellPool.getOrDefault(curOrder.getOrderPrice(), new ArrayList<>());
+                curSellOrders.add(curOrder);
+                curSellPool.put(curOrder.getOrderPrice(), curSellOrders);
+                poolS.put(curOrder.getSecCode(), curSellPool);
+
+                int curSellPrice = curOrder.getOrderPrice();
+
+                // do partial transaction
+                HashMap<Integer, ArrayList<Order>> curBuyPool = poolB.getOrDefault(curOrder.getSecCode(), new HashMap<>());
+                HashMap<Integer, ArrayList<Order>> sortedCurBuyPool = (HashMap<Integer, ArrayList<Order>>)
+                        sortMapBykeyDesc(curBuyPool);
+                // match orders
+                for (Map.Entry curBuyOrdersEntry : sortedCurBuyPool.entrySet()) {
+                    int curBuyPrice = (int) curBuyOrdersEntry.getKey();
+                    // when matched, do transaction
+                    if (curBuyPrice >= curSellPrice) {
+                        ArrayList<Order> curBuyOrders = (ArrayList<Order>) curBuyOrdersEntry.getValue();
+                        stockExchange(curBuyOrders, curSellOrders);
+                        // add pending orders into pool again for future usage
+                        // TODO: either use sorted or unsorted, I think latter is better for isolation
+                        updatePool(curBuyPool, curBuyOrders, curBuyPrice);
+                    }
+                }
+
+                poolB.replace(curOrder.getSecCode(), curBuyPool);
+
+                updatePool(curSellPool, curSellOrders, curSellPrice);
+                poolS.replace(curOrder.getSecCode(), curSellPool);
+            }
+//            System.out.println("processing time: " + (System.currentTimeMillis() - start));
+            return matchedResult;
+        }
+
+        public void deleteOrder(Order curOrder, String direction) throws Exception {
+            if (direction.equals("")) {
+                System.out.println("no order to delete!");
+            }
+
+            String orderNo = curOrder.getOrderNo();
+            String stockId = curOrder.getSecCode();
+            int orderPrice = curOrder.getOrderPrice();
+
+            Order targetOrder = null;
+
+            if (direction.equals("S")) {
+                stockExchangeMapSell.remove(orderNo);
+                HashMap<Integer, ArrayList<Order>> curSellPool = poolS.getOrDefault(stockId, new HashMap<>());
+                ArrayList<Order> curSellOrders = curSellPool.getOrDefault(orderPrice, new ArrayList<>());
+
+                for (Order order : curSellOrders) {
+                    if (order.getOrderNo().equals(orderNo)) {
+                        targetOrder = order;
+                        break;
+                    }
+                }
+                curSellOrders.remove(targetOrder);
+                updatePool(curSellPool, curSellOrders, curOrder.getOrderPrice());
+                poolS.replace(curOrder.getSecCode(),curSellPool);
+            }
+            if (direction.equals("B")) {
+                stockExchangeMapBuy.remove(orderNo);
+                HashMap<Integer, ArrayList<Order>> curBuyPool = poolB.getOrDefault(stockId, new HashMap<>());
+                ArrayList<Order> curBuyOrders = curBuyPool.getOrDefault(orderPrice, new ArrayList<>());
+                for (Order order : curBuyOrders) {
+                    if (order.getOrderNo().equals(curOrder.getOrderNo())) {
+                        targetOrder = order;
+                        break;
+                    }
+                }
+                curBuyOrders.remove(targetOrder);
+                updatePool(curBuyPool, curBuyOrders, curOrder.getOrderPrice());
+                poolB.replace(curOrder.getSecCode(),curBuyPool);
+            }
+        }
+
+        public void updatePool(HashMap<Integer, ArrayList<Order>> curPool, ArrayList<Order> orderList, int key) {
+            if (orderList.isEmpty()) {
+                curPool.remove(key);
+            } else {
+                curPool.replace(key, orderList);
+            }
+        }
+
+        public void insertPool(Order curOrder) {
+            String curSecCode = curOrder.getSecCode();
+            int curOrderPrice = curOrder.getOrderPrice();
+            String direction = curOrder.getTradeDir();
+
+            if (direction.equals("B")) {
+                HashMap<Integer, ArrayList<Order>> curPool = poolB.getOrDefault(curSecCode, new HashMap<>());
+                ArrayList<Order> curOrderList = curPool.getOrDefault(curOrderPrice, new ArrayList<>());
+                // need to keep pool price be sorted, so insert it into pool price
+                curOrderList.add(curOrder);
+                curPool.put(curOrderPrice, curOrderList);
+                poolB.put(curOrder.getSecCode(), curPool);
+            } else {
+                HashMap<Integer, ArrayList<Order>> curPool = poolS.getOrDefault(curSecCode, new HashMap<>());
+                ArrayList<Order> curOrderList = curPool.getOrDefault(curOrderPrice, new ArrayList<>());
+                // need to keep pool price be sorted, so insert it into pool price
+                curOrderList.add(curOrder);
+                curPool.put(curOrderPrice, curOrderList);
+                poolS.put(curOrder.getSecCode(), curPool);
+            }
+        }
+
+        public void stockExchange(ArrayList<Order> curBuyOrders, ArrayList<Order> curSellOrders) throws Exception {
+            ArrayList<Order> tradedBuyOrders = new ArrayList<>();
+            ArrayList<Order> tradedSellOrders = new ArrayList<>();
+
+            // match orders one by one, until all orders are matched
+            for (Order curBuyOrder : curBuyOrders) {
+                for (Order curSellOrder : curSellOrders) {
+                    int buyVol = curBuyOrder.getOrderVol();
+                    int sellVol = curSellOrder.getOrderVol();
+                    if (buyVol == 0 || sellVol == 0) continue;
+                    if (buyVol > sellVol) {
+                        curBuyOrder.updateOrder(sellVol);
+                        curSellOrder.updateOrder(sellVol);
+                        tradedSellOrders.add(curSellOrder);
+//                    System.out.println("Traded Sell: " + sellVol +  " - " + curSellOrder.toString());
+//                    System.out.println("Half-Traded Buy: " + sellVol +  " - " + curBuyOrder.toString());
+                    } else {
+                        curBuyOrder.updateOrder(buyVol);
+                        curSellOrder.updateOrder(buyVol);
+                        tradedBuyOrders.add(curBuyOrder);
+//                    System.out.println("Traded Buy: " + buyVol + " - " + curBuyOrder.toString());
+//                    System.out.println("Half-Traded Sell: " + buyVol +  " - " + curSellOrder.toString());
+                    }
+                }
+            }
+            // remove traded orders, and update half-traded orders
+            for (Order tradedSellOrder : tradedSellOrders) {
+//            System.out.println(stockExchangeMapSell.containsKey(tradedSellOrder.getOrderNo()) + " "
+//                    + tradedSellOrder.toString());
+                curSellOrders.remove(tradedSellOrder);
+                stockExchangeMapSell.remove(tradedSellOrder.getOrderNo());
+            }
+
+            for (Order tradedBuyOrder : tradedBuyOrders) {
+//            System.out.println(stockExchangeMapBuy.containsKey(tradedBuyOrder.getOrderNo()) + " "
+//                    + tradedBuyOrder.toString());
+                curBuyOrders.remove(tradedBuyOrder);
+                stockExchangeMapBuy.remove(tradedBuyOrder.getOrderNo());
+            }
+
+            // update orders half traded.
+            for (Order halfTradedSellOrder : curSellOrders) {
+                stockExchangeMapSell.put(halfTradedSellOrder.getOrderNo(), halfTradedSellOrder);
+            }
+
+            for (Order halfTradedBuyOrder : curBuyOrders) {
+                stockExchangeMapBuy.put(halfTradedBuyOrder.getOrderNo(), halfTradedBuyOrder);
+            }
+        }
+
+        public void auctionFlush() throws Exception {
+            System.out.println("flush to state backend");
+            for (Map.Entry entry : poolS.entrySet()) {
+                String stockId = (String) entry.getKey();
+                HashMap<Integer, ArrayList<Order>> curPool = (HashMap<Integer, ArrayList<Order>>) entry.getValue();
+                test.put(stockId, new OrderPool(curPool));
+                System.out.println(test.get(stockId));
+                for (Map.Entry entry1 : curPool.entrySet()) {
+                    ArrayList<Order> orderList = (ArrayList<Order>) entry1.getValue();
+                    for (Order order : orderList) {
+                        stockExchangeMapSell.put(order.getOrderNo(), order);
+                    }
+                }
+            }
+
+            for (Map.Entry entry : poolB.entrySet()) {
+                HashMap<Integer, ArrayList<Order>> curPool = (HashMap<Integer, ArrayList<Order>>) entry.getValue();
+                for (Map.Entry entry1 : curPool.entrySet()) {
+                    ArrayList<Order> orderList = (ArrayList<Order>) entry1.getValue();
+                    for (Order order : orderList) {
+                        stockExchangeMapBuy.put(order.getOrderNo(), order);
+                    }
+                }
+            }
+        }
+
+        public void metricsDump() throws Exception {
+            Iterator testIter = test.iterator();
+            int sumTest = 0;
+            while (testIter.hasNext()) {
+                Map.Entry<String, Order> entry = (Map.Entry<String, Order>) testIter.next();
+                sumTest++;
+            }
+
+            System.out.println("test size: " + sumTest);
+
+            Iterator buyIter = stockExchangeMapBuy.iterator();
+            Iterator sellIter = stockExchangeMapSell.iterator();
+
+            int buySum = 0;
+            while (buyIter.hasNext()) {
+                Map.Entry<String, Order> entry = (Map.Entry<String, Order>) buyIter.next();
+                buySum++;
+            }
+
+            int sellSum = 0;
+            while (sellIter.hasNext()) {
+                Map.Entry<String, Order> entry = (Map.Entry<String, Order>) sellIter.next();
+                sellSum++;
+            }
+
+            System.out.println("sell state size: " + buySum + " buy state size: "
+                    + sellSum + " total state size: " + (buySum+sellSum));
+
+            int totalSellIndex = 0;
+            for (Map.Entry entry : poolS.entrySet()) {
+                HashMap<Integer, ArrayList<Order>> curPool = (HashMap<Integer, ArrayList<Order>>) entry.getValue();
+                for (Map.Entry entry1 : curPool.entrySet()) {
+                    ArrayList<Order> orderList = (ArrayList<Order>) entry1.getValue();
+                    totalSellIndex += orderList.size();
+                }
+            }
+
+            int totalBuyIndex = 0;
+            for (Map.Entry entry : poolB.entrySet()) {
+                HashMap<Integer, ArrayList<Order>> curPool = (HashMap<Integer, ArrayList<Order>>) entry.getValue();
+                for (Map.Entry entry1 : curPool.entrySet()) {
+                    ArrayList<Order> orderList = (ArrayList<Order>) entry1.getValue();
+                    totalBuyIndex += orderList.size();
+                }
+            }
+
+            System.out.println("sell size: " + totalSellIndex + " buy size: "
+                    + totalBuyIndex + " total size: " + (totalBuyIndex+totalSellIndex));
+        }
+    }
+}
