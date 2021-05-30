@@ -26,14 +26,17 @@ import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.io.network.partition.consumer.InputGate;
 import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.TaskIOMetricGroup;
-import org.apache.flink.runtime.rescale.TaskRescaleManager;
-import org.apache.flink.runtime.taskmanager.RuntimeEnvironment;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import org.apache.flink.streaming.runtime.io.*;
+import org.apache.flink.streaming.runtime.io.AbstractDataOutput;
+import org.apache.flink.streaming.runtime.io.CheckpointedInputGate;
+import org.apache.flink.streaming.runtime.io.InputGateUtil;
+import org.apache.flink.streaming.runtime.io.InputProcessorUtil;
 import org.apache.flink.streaming.runtime.io.PushingAsyncDataInput.DataOutput;
+import org.apache.flink.streaming.runtime.io.StreamOneInputProcessor;
+import org.apache.flink.streaming.runtime.io.StreamTaskInput;
+import org.apache.flink.streaming.runtime.io.StreamTaskNetworkInput;
 import org.apache.flink.streaming.runtime.metrics.WatermarkGauge;
 import org.apache.flink.streaming.runtime.streamrecord.LatencyMarker;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -41,6 +44,7 @@ import org.apache.flink.streaming.runtime.streamstatus.StatusWatermarkValve;
 import org.apache.flink.streaming.runtime.streamstatus.StreamStatusMaintainer;
 
 import javax.annotation.Nullable;
+
 import java.io.IOException;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -90,19 +94,7 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 			taskIOMetricGroup.gauge("checkpointAlignmentTime", inputGate::getAlignmentDurationNanos);
 
 			DataOutput<IN> output = createDataOutput();
-
-			if (output instanceof StreamTaskNetworkOutput) {
-				// pass on the MetricsManager
-				((StreamTaskNetworkOutput) output).setMetricsManager(getMetricsManager());
-			}
-
 			StreamTaskInput<IN> input = createTaskInput(inputGate, output);
-
-			if (input instanceof StreamTaskNetworkInput) {
-				// pass on the MetricsManager
-				((StreamTaskNetworkInput) input).setMetricsManager(getMetricsManager());
-			}
-
 			inputProcessor = new StreamOneInputProcessor<>(
 				input,
 				output,
@@ -112,19 +104,6 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 		headOperator.getMetricGroup().gauge(MetricNames.IO_CURRENT_INPUT_WATERMARK, this.inputWatermarkGauge);
 		// wrap watermark gauge since registered metrics must be unique
 		getEnvironment().getMetricGroup().gauge(MetricNames.IO_CURRENT_INPUT_WATERMARK, this.inputWatermarkGauge::getValue);
-	}
-
-	@Override
-	public void reconnect() {
-		TaskRescaleManager rescaleManager = ((RuntimeEnvironment) getEnvironment()).taskRescaleManager;
-
-		if (!rescaleManager.isScalingTarget()) {
-			return;
-		}
-
-		if (rescaleManager.isScalingGates()) {
-			((StreamOneInputProcessor) inputProcessor).reconnect();
-		}
 	}
 
 	private CheckpointedInputGate createCheckpointedInputGate() throws IOException {
@@ -154,14 +133,12 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 		StatusWatermarkValve statusWatermarkValve = new StatusWatermarkValve(numberOfInputChannels, output);
 
 		TypeSerializer<IN> inSerializer = configuration.getTypeSerializerIn1(getUserCodeClassLoader());
-		StreamTaskNetworkInput<IN> networkInput = new StreamTaskNetworkInput<>(
+		return new StreamTaskNetworkInput<>(
 			inputGate,
 			inSerializer,
 			getEnvironment().getIOManager(),
 			statusWatermarkValve,
 			0);
-		networkInput.setPauseActionController(this.pauseActionController);
-		return networkInput;
 	}
 
 	/**
@@ -174,12 +151,6 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 
 		private final WatermarkGauge watermarkGauge;
 		private final Counter numRecordsIn;
-
-		private MetricsManager metricsManager;
-		private long deserializationDuration = 0;
-		private long processingDuration = 0;
-		private long recordsProcessed = 0;
-		private long endToEndLatency = 0;
 
 		private StreamTaskNetworkOutput(
 				OneInputStreamOperator<IN, ?> operator,
@@ -198,32 +169,8 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 		public void emitRecord(StreamRecord<IN> record) throws Exception {
 			synchronized (lock) {
 				numRecordsIn.inc();
-
-//				metricsManager.incRecordIn(record.getKeyGroup());
-//
-//				recordsProcessed++;
-
 				operator.setKeyContextElement1(record);
-
-//				long queuingDelay = System.currentTimeMillis() - record.getLatencyTimestamp();
-
-//				long processingStart = System.nanoTime();
-//				long processingStart = System.currentTimeMillis();
 				operator.processElement(record);
-//				long processingDelay = System.currentTimeMillis() - processingStart;
-
-//				metricsManager.groundTruth(record.getKeyGroup(), processingDelay + queuingDelay);
-//				endToEndLatency += System.currentTimeMillis() - record.getLatencyTimestamp();
-
-//				metricsManager.inputBufferConsumed(System.nanoTime(),
-//					deserializationDuration, processingDuration,
-//					recordsProcessed, endToEndLatency);
-
-				// TODO: by far, we only need to measure the latency and throughput, other things are left for future measurement
-//				processingDuration = 0;
-//				recordsProcessed = 0;
-//				endToEndLatency = 0;
-//				deserializationDuration = 0;
 			}
 		}
 
@@ -240,10 +187,6 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 			synchronized (lock) {
 				operator.processLatencyMarker(latencyMarker);
 			}
-		}
-
-		public void setMetricsManager(MetricsManager metricsManager) {
-			this.metricsManager = metricsManager;
 		}
 	}
 }

@@ -19,7 +19,6 @@
 package org.apache.flink.runtime.jobmaster.slotpool;
 
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.runtime.clusterframework.types.SlotID;
 import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.instance.SlotSharingGroupId;
 import org.apache.flink.runtime.jobmanager.scheduler.ScheduledUnit;
@@ -57,13 +56,6 @@ public interface SlotProvider {
 		ScheduledUnit scheduledUnit,
 		SlotProfile slotProfile,
 		Time allocationTimeout);
-
-	CompletableFuture<LogicalSlot> allocateSlot(
-		SlotRequestId slotRequestId,
-		ScheduledUnit scheduledUnit,
-		SlotProfile slotProfile,
-		Time allocationTimeout,
-		SlotID slotId);
 
 	/**
 	 * Allocating batch slot with specific requirement.

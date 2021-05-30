@@ -217,8 +217,7 @@ public class TaskAsyncCallTest extends TestLogger {
 			taskMetricGroup,
 			consumableNotifier,
 			partitionProducerStateChecker,
-			executor,
-			null);
+			executor);
 	}
 
 	/**

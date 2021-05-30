@@ -221,8 +221,7 @@ public final class TestTaskBuilder {
 			taskMetricGroup,
 			consumableNotifier,
 			partitionProducerStateChecker,
-			executor,
-			null);
+			executor);
 	}
 
 	public static void setTaskState(Task task, ExecutionState state) {

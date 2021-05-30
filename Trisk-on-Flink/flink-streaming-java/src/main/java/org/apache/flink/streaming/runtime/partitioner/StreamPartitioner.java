@@ -20,7 +20,6 @@ package org.apache.flink.streaming.runtime.partitioner;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.runtime.io.network.api.writer.ChannelSelector;
 import org.apache.flink.runtime.plugable.SerializationDelegate;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 import java.io.Serializable;
@@ -35,8 +34,6 @@ public abstract class StreamPartitioner<T> implements
 
 	protected int numberOfChannels;
 
-	protected MetricsManager metricsManager;
-
 	@Override
 	public void setup(int numberOfChannels) {
 		this.numberOfChannels = numberOfChannels;
@@ -48,9 +45,4 @@ public abstract class StreamPartitioner<T> implements
 	}
 
 	public abstract StreamPartitioner<T> copy();
-
-	@Override
-	public void setMetricsManager(MetricsManager metricsManager) {
-		this.metricsManager = metricsManager;
-	}
 }

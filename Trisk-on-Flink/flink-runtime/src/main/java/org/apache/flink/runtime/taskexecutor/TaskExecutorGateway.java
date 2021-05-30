@@ -20,7 +20,6 @@ package org.apache.flink.runtime.taskexecutor;
 
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.blob.BlobServer;
 import org.apache.flink.runtime.blob.TransientBlobKey;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
@@ -32,7 +31,6 @@ import org.apache.flink.runtime.deployment.TaskDeploymentDescriptor;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.PartitionInfo;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.messages.Acknowledge;
@@ -96,25 +94,6 @@ public interface TaskExecutorGateway extends RpcGateway {
 		TaskDeploymentDescriptor tdd,
 		JobMasterId jobMasterId,
 		RescaleOptions rescaleOptions,
-		@RpcTimeout Time timeout);
-
-	CompletableFuture<Acknowledge> scheduleSync(
-		ExecutionAttemptID executionAttemptID,
-		int syncFlag,
-		@RpcTimeout Time timeout);
-
-	/**
-	 * Update the operator of the given task.
-	 *
-	 * @param executionAttemptID identifying the task
-	 * @param operatorID the id of being updated operator
-	 * @param timeout of the submit operation
-	 * @return Future acknowledge if the task is successfully canceled
-	 */
-	CompletableFuture<Acknowledge> updateOperator(
-		ExecutionAttemptID executionAttemptID,
-		Configuration updatedConfig,
-		OperatorID operatorID,
 		@RpcTimeout Time timeout);
 
 	/**

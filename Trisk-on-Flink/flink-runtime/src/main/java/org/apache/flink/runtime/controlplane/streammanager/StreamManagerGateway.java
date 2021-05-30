@@ -19,12 +19,8 @@
 package org.apache.flink.runtime.controlplane.streammanager;
 
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
-import org.apache.flink.runtime.controlplane.ExecutionPlanAndJobGraphUpdaterFactory;
-import org.apache.flink.runtime.controlplane.abstraction.ExecutionPlan;
-import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobmaster.JobMaster;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.registration.RegistrationResponse;
@@ -64,28 +60,5 @@ public interface StreamManagerGateway extends FencedRpcGateway<StreamManagerId> 
 	void disconnectJobManager(
 		final JobID jobId,
 		final Exception cause);
-
-	/**
-	 * The notification from the JobManager that changes completed:
-	 * Maybe 1. Assign states for repartition, 2. Rescale and assign states
-	 * @param targetVertexID the JobVertexID of target vertex
-	 */
-	void streamSwitchCompleted(JobVertexID targetVertexID);
-
-	/**
-	 * This method is called whenever the status of the job changes.
-	 *
-	 * @param jobId         The ID of the job.
-	 * @param newJobStatus  The status the job switched to.
-	 * @param timestamp     The timestamp when the status transition occurred.
-	 * @param error         In case the job status switches to a failure state, this is the
-	 *                      exception that caused the failure.
-	 */
-	void jobStatusChanged(JobID jobId, JobStatus newJobStatus, long timestamp, Throwable error, ExecutionPlan jobAbstraction);
-
-	ExecutionPlanAndJobGraphUpdaterFactory getStreamRelatedInstanceFactory();
-
-	boolean registerNewController(String controllerID, String className, String sourceCode);
-
 
 }

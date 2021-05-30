@@ -54,8 +54,6 @@ public class ExecutorUtils {
 		jobGraph.setClasspaths(executionConfigAccessor.getClasspaths());
 		jobGraph.setSavepointRestoreSettings(executionConfigAccessor.getSavepointRestoreSettings());
 
-		jobGraph.setJobConfiguration(configuration);
-
 		return jobGraph;
 	}
 }

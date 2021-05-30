@@ -28,11 +28,9 @@ import org.apache.flink.runtime.state.CheckpointStreamFactory;
 import org.apache.flink.runtime.state.ttl.mock.MockStateBackend;
 import org.apache.flink.streaming.api.operators.ChainingStrategy;
 import org.apache.flink.streaming.api.operators.OperatorSnapshotFutures;
-import org.apache.flink.streaming.api.operators.Output;
 import org.apache.flink.streaming.api.operators.StreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
-import org.apache.flink.streaming.runtime.tasks.StreamTask;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -136,16 +134,6 @@ public class SnapshotUtilsTest {
 		public OperatorID getOperatorID() {
 			ACTUAL_ORDER_TRACKING.add("getOperatorID");
 			return null;
-		}
-
-		@Override
-		public void updateOutput(StreamTask<?, ?> containingTask, Output<StreamRecord<Void>> output) {
-
-		}
-
-		@Override
-		public void updateKeyGroupOffset() {
-
 		}
 
 		@Override

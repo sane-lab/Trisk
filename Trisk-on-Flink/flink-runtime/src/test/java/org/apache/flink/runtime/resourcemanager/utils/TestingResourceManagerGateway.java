@@ -40,7 +40,6 @@ import org.apache.flink.runtime.resourcemanager.ResourceManagerId;
 import org.apache.flink.runtime.resourcemanager.ResourceOverview;
 import org.apache.flink.runtime.resourcemanager.SlotRequest;
 import org.apache.flink.runtime.resourcemanager.TaskExecutorRegistration;
-import org.apache.flink.runtime.resourcemanager.slotmanager.TaskManagerSlot;
 import org.apache.flink.runtime.rest.messages.taskmanager.TaskManagerInfo;
 import org.apache.flink.runtime.taskexecutor.FileType;
 import org.apache.flink.runtime.taskexecutor.SlotReport;
@@ -194,11 +193,6 @@ public class TestingResourceManagerGateway implements ResourceManagerGateway {
 	}
 
 	@Override
-	public CompletableFuture<Acknowledge> requestSlot(JobMasterId jobMasterId, SlotRequest slotRequest, Time timeout, SlotID slotId) {
-		return null;
-	}
-
-	@Override
 	public void cancelSlotRequest(AllocationID allocationID) {
 		Consumer<AllocationID> currentCancelSlotConsumer = cancelSlotConsumer;
 
@@ -313,11 +307,6 @@ public class TestingResourceManagerGateway implements ResourceManagerGateway {
 		} else {
 			return CompletableFuture.completedFuture(new TransientBlobKey());
 		}
-	}
-
-	@Override
-	public CompletableFuture<Collection<TaskManagerSlot>> getAllSlots() {
-		return null;
 	}
 
 	@Override

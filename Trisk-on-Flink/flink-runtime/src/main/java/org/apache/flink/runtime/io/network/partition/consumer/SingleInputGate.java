@@ -32,7 +32,6 @@ import org.apache.flink.runtime.io.network.buffer.BufferProvider;
 import org.apache.flink.runtime.io.network.partition.PartitionProducerStateProvider;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
-import org.apache.flink.runtime.io.network.partition.ResultSubpartition;
 import org.apache.flink.runtime.io.network.partition.consumer.InputChannel.BufferAndAvailability;
 import org.apache.flink.runtime.jobgraph.DistributionPattern;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
@@ -124,10 +123,10 @@ public class SingleInputGate extends InputGate {
 	 * The index of the consumed subpartition of each consumed partition. This index depends on the
 	 * {@link DistributionPattern} and the subtask indices of the producing and consuming task.
 	 */
-	private int consumedSubpartitionIndex;
+	private final int consumedSubpartitionIndex;
 
 	/** The number of input channels (equivalent to the number of consumed partitions). */
-	private int numberOfInputChannels;
+	private final int numberOfInputChannels;
 
 	/**
 	 * Input channels. There is a one input channel for each consumed intermediate result partition.
@@ -142,9 +141,9 @@ public class SingleInputGate extends InputGate {
 	 * Field guaranteeing uniqueness for inputChannelsWithData queue. Both of those fields should be unified
 	 * onto one.
 	 */
-	private BitSet enqueuedInputChannelsWithData;
+	private final BitSet enqueuedInputChannelsWithData;
 
-	private BitSet channelsWithEndOfPartitionEvents;
+	private final BitSet channelsWithEndOfPartitionEvents;
 
 	/** The partition producer state listener. */
 	private final PartitionProducerStateProvider partitionProducerStateProvider;
@@ -220,7 +219,7 @@ public class SingleInputGate extends InputGate {
 	}
 
 	@VisibleForTesting
-	public void requestPartitions() throws IOException, InterruptedException {
+	void requestPartitions() throws IOException, InterruptedException {
 		synchronized (requestLock) {
 			if (!requestedPartitionsFlag) {
 				if (closeFuture.isDone()) {
@@ -259,13 +258,6 @@ public class SingleInputGate extends InputGate {
 		return consumedResultId;
 	}
 
-	public int getConsumedSubpartitionIndex() {
-		return consumedSubpartitionIndex;
-	}
-
-	public void setConsumedSubpartitionIndex(int consumedSubpartitionIndex) {
-		this.consumedSubpartitionIndex = consumedSubpartitionIndex;
-	}
 	/**
 	 * Returns the type of this input channel's consumed result partition.
 	 *
@@ -462,57 +454,6 @@ public class SingleInputGate extends InputGate {
 				inputChannelsWithData.notifyAll();
 			}
 		}
-	}
-
-
-	public void reset(int numberOfInputChannels) {
-		synchronized (requestLock) {
-			for (InputChannel inputChannel : inputChannels.values()) {
-				try {
-//					if (inputChannel instanceof RemoteInputChannel) {
-//						System.out.println("++++++ Task: " + owningTaskName + " Number of buffers left during scaling: " + ((RemoteInputChannel) inputChannel).getNumberOfQueuedBuffers());
-//					}
-//					if (inputChannel instanceof LocalInputChannel) {
-//						System.out.println("++++++ Task: " + owningTaskName + " has buffer left: " + ((LocalInputChannel) inputChannel).getNextBuffer());
-//					if(inputChannel instanceof RemoteInputChannel){
-//						LOG.info("-----DEBUG number of left buffer in remote channel:" +
-//							((RemoteInputChannel) inputChannel).getNumberOfQueuedBuffers()+ " of task " + owningTaskName);
-//					}else if(inputChannel instanceof LocalInputChannel){
-//						try {
-//							Optional<BufferAndAvailability> buffer;
-//							if((buffer = inputChannel.getNextBuffer()).isPresent()) {
-//								System.err.println("-----DEBUG, the local input channel has buffer:" + buffer);
-//							}
-//						} catch (InterruptedException e) {
-//							e.printStackTrace();
-//						}
-//					}
-					inputChannel.releaseAllResources();
-				}
-				catch (IOException e) {
-					LOG.warn("{}: Error during release of channel resources: {}.",
-						owningTaskName, e.getMessage(), e);
-				}
-			}
-
-			this.inputChannels.clear();
-//			this.inputChannelsWithData.clear();
-		}
-
-		this.numberOfInputChannels = numberOfInputChannels;
-
-//		this.networkBufferPool = null;
-//		this.bufferPool = null;
-
-		// TODO: check whether we need to reinitialize the inputChannels hashmap
-//		this.inputChannels = new HashMap<>(numberOfInputChannels);
-
-		this.enqueuedInputChannelsWithData = new BitSet(numberOfInputChannels);
-		this.channelsWithEndOfPartitionEvents = new BitSet(numberOfInputChannels);
-
-		this.requestedPartitionsFlag = false;
-		this.pendingEvents.clear();
-		this.retriggerLocalRequestTimer = null;
 	}
 
 	@Override

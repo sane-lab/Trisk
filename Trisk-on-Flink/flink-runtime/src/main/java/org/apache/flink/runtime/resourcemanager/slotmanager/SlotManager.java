@@ -29,7 +29,6 @@ import org.apache.flink.runtime.resourcemanager.exceptions.ResourceManagerExcept
 import org.apache.flink.runtime.resourcemanager.registration.TaskExecutorConnection;
 import org.apache.flink.runtime.taskexecutor.SlotReport;
 
-import java.util.Collection;
 import java.util.concurrent.Executor;
 
 /**
@@ -55,8 +54,6 @@ public interface SlotManager extends AutoCloseable {
 	int getNumberPendingTaskManagerSlots();
 
 	int getNumberPendingSlotRequests();
-
-	Collection<TaskManagerSlot> getAllSlots();
 
 	/**
 	 * Starts the slot manager with the given leader id and resource manager actions.
@@ -131,6 +128,4 @@ public interface SlotManager extends AutoCloseable {
 
 	@VisibleForTesting
 	void unregisterTaskManagersAndReleaseResources();
-
-    void allocateSlot(SlotRequest slotRequest, SlotID slotID) throws ResourceManagerException;
 }

@@ -268,8 +268,7 @@ public class SynchronousCheckpointITCase {
 				taskMetricGroup,
 				consumableNotifier,
 				partitionProducerStateChecker,
-				executor,
-			null);
+				executor);
 	}
 
 	private static class TaskCleaner implements AutoCloseable {

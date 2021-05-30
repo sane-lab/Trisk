@@ -56,7 +56,6 @@ import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.runtime.state.StateSnapshotContextSynchronousImpl;
 import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.runtime.state.VoidNamespaceSerializer;
-import org.apache.flink.runtime.state.heap.HeapKeyedStateBackend;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.LatencyMarker;
@@ -190,9 +189,8 @@ public abstract class AbstractStreamOperator<OUT>
 		} catch (Exception e) {
 			LOG.warn("An error occurred while instantiating task metrics.", e);
 			this.metrics = UnregisteredMetricGroups.createUnregisteredOperatorMetricGroup();
+			this.output = output;
 		}
-
-		this.output = new UpdatableOutput<>(output);
 
 		try {
 			Configuration taskManagerConfig = environment.getTaskManagerInfo().getConfiguration();
@@ -252,15 +250,12 @@ public abstract class AbstractStreamOperator<OUT>
 			Preconditions.checkNotNull(containingTask.getCancelables());
 		final StreamTaskStateInitializer streamTaskStateManager =
 			Preconditions.checkNotNull(containingTask.createStreamTaskStateInitializer());
-		final KeyGroupRange assignedKeyGroupRange =
-			containingTask.getAssignedKeyGroupRange();
 
 		final StreamOperatorStateContext context =
 			streamTaskStateManager.streamOperatorStateContext(
 				getOperatorID(),
 				getClass().getSimpleName(),
 				getProcessingTimeService(),
-				assignedKeyGroupRange,
 				this,
 				keySerializer,
 				streamTaskCloseableRegistry,
@@ -290,13 +285,6 @@ public abstract class AbstractStreamOperator<OUT>
 		} finally {
 			closeFromRegistry(operatorStateInputs, streamTaskCloseableRegistry);
 			closeFromRegistry(keyedStateInputs, streamTaskCloseableRegistry);
-		}
-	}
-
-	@Override
-	public void updateKeyGroupOffset() {
-		if (keyedStateBackend instanceof HeapKeyedStateBackend) {
-			((HeapKeyedStateBackend) keyedStateBackend).updateKeyGroupOffset();
 		}
 	}
 
@@ -504,24 +492,6 @@ public abstract class AbstractStreamOperator<OUT>
 	public void notifyCheckpointComplete(long checkpointId) throws Exception {
 		if (keyedStateBackend != null) {
 			keyedStateBackend.notifyCheckpointComplete(checkpointId);
-		}
-	}
-
-	@Override
-	public void updateOutput(StreamTask<?, ?> containingTask, Output<StreamRecord<OUT>> output) {
-		if (this.output instanceof UpdatableOutput) {
-			try {
-				OperatorMetricGroup operatorMetricGroup = containingTask.getEnvironment()
-					.getMetricGroup().getOrAddOperator(config.getOperatorID(), config.getOperatorName());
-				output = new CountingOutput<>(output, operatorMetricGroup.getIOMetricGroup().getNumRecordsOutCounter());
-			} catch (Exception e) {
-				LOG.warn("An error occurred while instantiating task metrics during updating output.", e);
-			}
-
-			((UpdatableOutput<OUT>) this.output).updateOutput(output);
-		} else {
-			LOG.error("++++++ Cannot updateOutput since output is not instance of UpdatableOutput");
-			// TODO scaling : hanle error using a more proper way
 		}
 	}
 
@@ -769,43 +739,6 @@ public abstract class AbstractStreamOperator<OUT>
 		@Override
 		public void close() {
 			output.close();
-		}
-	}
-
-	public static class UpdatableOutput<OUT> implements Output<StreamRecord<OUT>> {
-		private volatile Output<StreamRecord<OUT>> output;
-
-		public UpdatableOutput(Output<StreamRecord<OUT>> output) {
-			this.output = output;
-		}
-
-		@Override
-		public void emitWatermark(Watermark mark) {
-			output.emitWatermark(mark);
-		}
-
-		@Override
-		public void emitLatencyMarker(LatencyMarker latencyMarker) {
-			output.emitLatencyMarker(latencyMarker);
-		}
-
-		@Override
-		public void collect(StreamRecord<OUT> record) {
-			output.collect(record);
-		}
-
-		@Override
-		public <X> void collect(OutputTag<X> outputTag, StreamRecord<X> record) {
-			output.collect(outputTag, record);
-		}
-
-		@Override
-		public void close() {
-			output.close();
-		}
-
-		public void updateOutput(Output<StreamRecord<OUT>> output) {
-			this.output = output;
 		}
 	}
 

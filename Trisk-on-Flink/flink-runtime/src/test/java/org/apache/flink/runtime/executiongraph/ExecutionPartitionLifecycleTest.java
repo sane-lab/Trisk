@@ -28,7 +28,6 @@ import org.apache.flink.runtime.blob.VoidBlobWriter;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
 import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
-import org.apache.flink.runtime.clusterframework.types.SlotID;
 import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutorServiceAdapter;
 import org.apache.flink.runtime.deployment.ResultPartitionDeploymentDescriptor;
@@ -53,7 +52,6 @@ import org.apache.flink.runtime.jobmaster.SlotOwner;
 import org.apache.flink.runtime.jobmaster.SlotRequestId;
 import org.apache.flink.runtime.jobmaster.TestingLogicalSlotBuilder;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
-import org.apache.flink.runtime.rescale.RescaleID;
 import org.apache.flink.runtime.shuffle.NettyShuffleMaster;
 import org.apache.flink.runtime.shuffle.PartitionDescriptor;
 import org.apache.flink.runtime.shuffle.ProducerDescriptor;
@@ -245,11 +243,6 @@ public class ExecutionPartitionLifecycleTest extends TestLogger {
 			}
 
 			@Override
-			public CompletableFuture<LogicalSlot> allocateSlot(SlotRequestId slotRequestId, ScheduledUnit scheduledUnit, SlotProfile slotProfile, Time allocationTimeout, SlotID slotId) {
-				return null;
-			}
-
-			@Override
 			public void cancelSlotRequest(SlotRequestId slotRequestId, @Nullable SlotSharingGroupId slotSharingGroupId, Throwable cause) {
 			}
 		};
@@ -335,11 +328,6 @@ public class ExecutionPartitionLifecycleTest extends TestLogger {
 				@Override
 				public Optional<ResourceID> storesLocalResourcesOn() {
 					return Optional.of(producerDescriptor.getProducerLocation());
-				}
-
-				@Override
-				public void updateResultPartitionId(RescaleID rescaleId) {
-
 				}
 			});
 		}

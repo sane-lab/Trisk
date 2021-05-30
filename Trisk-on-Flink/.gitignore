@@ -2,7 +2,6 @@
 scalastyle-output.xml
 .classpath
 .idea
-.run
 .metadata
 .settings
 .project

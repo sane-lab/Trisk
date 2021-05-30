@@ -27,6 +27,5 @@ import org.apache.flink.runtime.jobgraph.JobGraph;
 public interface StreamManagerServiceFactory {
 
 	StreamManagerService createStreamManagerService(
-		JobGraph jobGraph,
-		ClassLoader userCodeLoader) throws Exception;
+		JobGraph jobGraph) throws Exception;
 }

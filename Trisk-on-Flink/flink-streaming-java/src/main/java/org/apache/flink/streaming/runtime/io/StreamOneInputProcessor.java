@@ -19,18 +19,13 @@
 package org.apache.flink.streaming.runtime.io;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.runtime.io.network.api.serialization.RecordDeserializer;
-import org.apache.flink.runtime.io.network.api.serialization.SpillingAdaptiveSpanningRecordDeserializer;
-import org.apache.flink.runtime.plugable.DeserializationDelegate;
 import org.apache.flink.streaming.runtime.io.PushingAsyncDataInput.DataOutput;
-import org.apache.flink.streaming.runtime.streamrecord.StreamElement;
 import org.apache.flink.streaming.runtime.tasks.OperatorChain;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -85,15 +80,5 @@ public final class StreamOneInputProcessor<IN> implements StreamInputProcessor {
 	@Override
 	public void close() throws IOException {
 		input.close();
-	}
-
-	@SuppressWarnings("unchecked")
-	public void reconnect() {
-		// create a new deserializer with new num of input
-		// update watermark related things
-		// update num of input in barrier buffer
-		if (input instanceof StreamTaskNetworkInput) {
-			((StreamTaskNetworkInput) input).reconnect();
-		}
 	}
 }

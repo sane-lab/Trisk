@@ -31,17 +31,13 @@ import org.apache.flink.runtime.io.network.buffer.Buffer;
 import org.apache.flink.runtime.io.network.partition.consumer.BufferOrEvent;
 import org.apache.flink.runtime.plugable.DeserializationDelegate;
 import org.apache.flink.runtime.plugable.NonReusingDeserializationDelegate;
-import org.apache.flink.runtime.rescale.reconfigure.TaskOperatorManager;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamElement;
 import org.apache.flink.streaming.runtime.streamrecord.StreamElementSerializer;
-import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.streamstatus.StatusWatermarkValve;
 import org.apache.flink.streaming.runtime.streamstatus.StreamStatus;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -67,7 +63,7 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 
 	private final DeserializationDelegate<StreamElement> deserializationDelegate;
 
-	private RecordDeserializer<DeserializationDelegate<StreamElement>>[] recordDeserializers;
+	private final RecordDeserializer<DeserializationDelegate<StreamElement>>[] recordDeserializers;
 
 	/** Valve that controls how watermarks and stream statuses are forwarded. */
 	private final StatusWatermarkValve statusWatermarkValve;
@@ -77,17 +73,6 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 	private int lastChannel = UNSPECIFIED;
 
 	private RecordDeserializer<DeserializationDelegate<StreamElement>> currentRecordDeserializer = null;
-
-	private final IOManager ioManager;
-
-	private MetricsManager metricsManager;
-
-	private TaskOperatorManager.PauseActionController pauseActionController;
-
-	private long deserializationDuration = 0;
-	private long processingDuration = 0;
-	private long recordsProcessed = 0;
-	private long endToEndLatency = 0;
 
 	@SuppressWarnings("unchecked")
 	public StreamTaskNetworkInput(
@@ -109,8 +94,6 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 
 		this.statusWatermarkValve = checkNotNull(statusWatermarkValve);
 		this.inputIndex = inputIndex;
-
-		this.ioManager = ioManager;
 	}
 
 	@VisibleForTesting
@@ -127,12 +110,6 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 		this.recordDeserializers = recordDeserializers;
 		this.statusWatermarkValve = statusWatermarkValve;
 		this.inputIndex = inputIndex;
-
-		this.ioManager = null;
-	}
-
-	public void setPauseActionController(TaskOperatorManager.PauseActionController pauseActionController) {
-		this.pauseActionController = pauseActionController;
 	}
 
 	@Override
@@ -141,10 +118,7 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 		while (true) {
 			// get the stream element from the deserializer
 			if (currentRecordDeserializer != null) {
-				long start = System.nanoTime();
 				DeserializationResult result = currentRecordDeserializer.getNextRecord(deserializationDelegate);
-				deserializationDuration += System.nanoTime() - start;
-
 				if (result.isBufferConsumed()) {
 					currentRecordDeserializer.getCurrentBuffer().recycleBuffer();
 					currentRecordDeserializer = null;
@@ -167,39 +141,14 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 					}
 					return InputStatus.END_OF_INPUT;
 				}
-				if(this.pauseActionController != null && pauseActionController.ackIfPause()){
-					return InputStatus.NEED_PAUSE;
-				}
 				return InputStatus.NOTHING_AVAILABLE;
-			}
-
-			if (deserializationDuration > 0) {
-//				metricsManager.addDeserialization(deserializationDuration);
-				metricsManager.inputBufferConsumed(System.nanoTime(),
-					deserializationDuration, processingDuration,
-					recordsProcessed, endToEndLatency);
-
-				processingDuration = 0;
-				recordsProcessed = 0;
-				endToEndLatency = 0;
-				deserializationDuration = 0;
 			}
 		}
 	}
 
 	private void processElement(StreamElement recordOrMark, DataOutput<T> output) throws Exception {
 		if (recordOrMark.isRecord()){
-			StreamRecord<T> record = recordOrMark.asRecord();
-			metricsManager.incRecordIn(record.getKeyGroup());
-			long queuingDelay = System.currentTimeMillis() - record.getLatencyTimestamp();
-			long processingStart = System.nanoTime();
-			output.emitRecord(record);
-			recordsProcessed++;
-			long processingDelay = System.nanoTime() - processingStart;
-			processingDuration += processingDelay;
-			long latency = queuingDelay + processingDelay/1000000;
-			endToEndLatency += latency;
-			metricsManager.groundTruth(record.getLatencyTimestamp(), latency);
+			output.emitRecord(recordOrMark.asRecord());
 		} else if (recordOrMark.isWatermark()) {
 			statusWatermarkValve.inputWatermark(recordOrMark.asWatermark(), lastChannel);
 		} else if (recordOrMark.isLatencyMarker()) {
@@ -220,9 +169,6 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 				"currentRecordDeserializer has already been released");
 
 			currentRecordDeserializer.setNextBuffer(bufferOrEvent.getBuffer());
-
-			// inform the MetricsManager that we got a new input buffer
-			metricsManager.newInputBuffer(System.nanoTime());
 		}
 		else {
 			// Event received
@@ -274,30 +220,5 @@ public final class StreamTaskNetworkInput<T> implements StreamTaskInput<T> {
 
 			recordDeserializers[channelIndex] = null;
 		}
-	}
-
-	public void reconnect() {
-		// TODO: if the num of channel is the same, do we need to update all those stuff?
-		int numInputChannels = checkpointedInputGate.getNumberOfInputChannels();
-
-		RecordDeserializer<DeserializationDelegate<StreamElement>>[] oldDeserializer =
-			Arrays.copyOf(recordDeserializers, recordDeserializers.length);
-		recordDeserializers = new SpillingAdaptiveSpanningRecordDeserializer[numInputChannels];
-
-		for (int i = 0; i < recordDeserializers.length; i++) {
-			if (i < oldDeserializer.length) {
-				recordDeserializers[i] = oldDeserializer[i];
-			} else {
-				recordDeserializers[i] = new SpillingAdaptiveSpanningRecordDeserializer<>(
-					ioManager.getSpillingDirectoriesPaths());
-			}
-		}
-
-		statusWatermarkValve.rescale(numInputChannels);
-		checkpointedInputGate.updateHandlerBufferChannels(numInputChannels);
-	}
-
-	public void setMetricsManager(MetricsManager metricsManager) {
-		this.metricsManager = metricsManager;
 	}
 }

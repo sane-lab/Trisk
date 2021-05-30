@@ -45,22 +45,22 @@ import java.util.concurrent.ScheduledExecutorService;
 public class LegacyScheduler extends SchedulerBase {
 
 	public LegacyScheduler(
-		final Logger log,
-		final JobGraph jobGraph,
-		final BackPressureStatsTracker backPressureStatsTracker,
-		final Executor ioExecutor,
-		final Configuration jobMasterConfiguration,
-		final SlotProvider slotProvider,
-		final ScheduledExecutorService futureExecutor,
-		final ClassLoader userCodeLoader,
-		final CheckpointRecoveryFactory checkpointRecoveryFactory,
-		final Time rpcTimeout,
-		final RestartStrategyFactory restartStrategyFactory,
-		final BlobWriter blobWriter,
-		final JobManagerJobMetricGroup jobManagerJobMetricGroup,
-		final Time slotRequestTimeout,
-		final ShuffleMaster<?> shuffleMaster,
-		final JobMasterPartitionTracker partitionTracker) throws Exception {
+			final Logger log,
+			final JobGraph jobGraph,
+			final BackPressureStatsTracker backPressureStatsTracker,
+			final Executor ioExecutor,
+			final Configuration jobMasterConfiguration,
+			final SlotProvider slotProvider,
+			final ScheduledExecutorService futureExecutor,
+			final ClassLoader userCodeLoader,
+			final CheckpointRecoveryFactory checkpointRecoveryFactory,
+			final Time rpcTimeout,
+			final RestartStrategyFactory restartStrategyFactory,
+			final BlobWriter blobWriter,
+			final JobManagerJobMetricGroup jobManagerJobMetricGroup,
+			final Time slotRequestTimeout,
+			final ShuffleMaster<?> shuffleMaster,
+			final JobMasterPartitionTracker partitionTracker) throws Exception {
 
 		super(
 			log,

@@ -321,10 +321,10 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 	}
 
 	private static Map<ExecutionVertexID, ExecutionVertexDeploymentOption> groupDeploymentOptionsByVertexId(
-		final Collection<ExecutionVertexDeploymentOption> executionVertexDeploymentOptions) {
+			final Collection<ExecutionVertexDeploymentOption> executionVertexDeploymentOptions) {
 		return executionVertexDeploymentOptions.stream().collect(Collectors.toMap(
-			ExecutionVertexDeploymentOption::getExecutionVertexId,
-			Function.identity()));
+				ExecutionVertexDeploymentOption::getExecutionVertexId,
+				Function.identity()));
 	}
 
 	private List<SlotExecutionVertexAssignment> allocateSlots(final List<ExecutionVertexDeploymentOption> executionVertexDeploymentOptions) {

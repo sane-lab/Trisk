@@ -26,14 +26,24 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.blob.PermanentBlobKey;
 import org.apache.flink.runtime.jobgraph.tasks.JobCheckpointingSettings;
+import org.apache.flink.runtime.rescale.JobGraphRescaler;
 import org.apache.flink.util.InstantiationUtil;
+import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.SerializedValue;
 
 import java.io.IOException;
 import java.io.Serializable;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -58,7 +68,7 @@ public class JobGraph implements Serializable {
 	private final Map<JobVertexID, JobVertex> taskVertices = new LinkedHashMap<JobVertexID, JobVertex>();
 
 	/** The job configuration attached to this job. */
-	private Configuration jobConfiguration = new Configuration();
+	private final Configuration jobConfiguration = new Configuration();
 
 	/** ID of this job. May be set if specific job id is desired (e.g. session management) */
 	private JobID jobID;
@@ -68,6 +78,8 @@ public class JobGraph implements Serializable {
 
 	/** The mode in which the job is scheduled */
 	private ScheduleMode scheduleMode = ScheduleMode.LAZY_FROM_SOURCES;
+
+	private String jobRescalerClassName;
 
 	// --- checkpointing ---
 
@@ -199,15 +211,6 @@ public class JobGraph implements Serializable {
 	 */
 	public Configuration getJobConfiguration() {
 		return this.jobConfiguration;
-	}
-
-	/**
-	 * get the job information in the flink-conf.yaml.
-	 *
-	 * @return null.
-	 */
-	public void setJobConfiguration(Configuration config) {
-		this.jobConfiguration = config;
 	}
 
 	/**
@@ -591,5 +594,14 @@ public class JobGraph implements Serializable {
 				jobConfiguration
 			);
 		}
+	}
+
+	public void setJobRescalerClass(Class<? extends JobGraphRescaler> jobRescaler) {
+		Preconditions.checkNotNull(jobRescaler);
+		this.jobRescalerClassName = jobRescaler.getName();
+	}
+
+	public String getJobRescalerClassName() {
+		return this.jobRescalerClassName;
 	}
 }

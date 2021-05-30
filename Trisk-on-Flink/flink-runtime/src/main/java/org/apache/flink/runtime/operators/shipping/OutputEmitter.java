@@ -23,7 +23,6 @@ import org.apache.flink.api.common.functions.Partitioner;
 import org.apache.flink.api.common.typeutils.TypeComparator;
 import org.apache.flink.runtime.io.network.api.writer.ChannelSelector;
 import org.apache.flink.runtime.plugable.SerializationDelegate;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 import org.apache.flink.util.MathUtils;
 
 /**
@@ -163,12 +162,7 @@ public class OutputEmitter<T> implements ChannelSelector<SerializationDelegate<T
 			return false;
 		}
 	}
-
-	@Override
-	public void setMetricsManager(MetricsManager metricsManager) {
-
-	}
-
+	
 	// --------------------------------------------------------------------------------------------
 
 	private int forward() {

@@ -290,10 +290,6 @@ public class SlotManagerImpl implements SlotManager {
 	// Public API
 	// ---------------------------------------------------------------------------------------------
 
-	public Collection<TaskManagerSlot> getAllSlots() {
-		return slots.values();
-	}
-
 	/**
 	 * Requests a slot with the respective resource profile.
 	 *
@@ -1205,33 +1201,6 @@ public class SlotManagerImpl implements SlotManager {
 			final FlinkException cause = new FlinkException("Triggering of SlotManager#unregisterTaskManagersAndReleaseResources.");
 			internalUnregisterTaskManager(taskManagerRegistration, cause);
 			resourceActions.releaseResource(taskManagerRegistration.getInstanceId(), cause);
-		}
-	}
-
-	public void allocateSlot(SlotRequest slotRequest, SlotID slotId) throws ResourceManagerException {
-		checkInit();
-
-		if (checkDuplicateRequest(slotRequest.getAllocationId())) {
-			LOG.debug("Ignoring a duplicate slot request with allocation id {}.", slotRequest.getAllocationId());
-			return;
-		}
-
-		PendingSlotRequest pendingSlotRequest = new PendingSlotRequest(slotRequest);
-		pendingSlotRequests.put(slotRequest.getAllocationId(), pendingSlotRequest);
-
-		TaskManagerSlot taskManagerSlot = freeSlots.get(slotId);
-
-		if (taskManagerSlot != null && taskManagerSlot.getState() == TaskManagerSlot.State.FREE) {
-			freeSlots.remove(taskManagerSlot.getSlotId());
-			allocateSlot(taskManagerSlot, pendingSlotRequest);
-		} else {
-			try {
-				internalRequestSlot(pendingSlotRequest);
-			} catch (ResourceManagerException e) {
-				// requesting the slot failed --> remove pending slot request
-				pendingSlotRequests.remove(slotRequest.getAllocationId());
-				throw new ResourceManagerException("Could not fulfill slot request " + slotRequest.getAllocationId() + '.', e);
-			}
 		}
 	}
 }

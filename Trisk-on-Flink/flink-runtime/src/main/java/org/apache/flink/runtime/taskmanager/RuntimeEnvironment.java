@@ -38,18 +38,11 @@ import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.runtime.metrics.groups.TaskMetricGroup;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
-import org.apache.flink.runtime.rescale.TaskRescaleManager;
-import org.apache.flink.runtime.rescale.reconfigure.TaskOperatorManager;
-import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.TaskStateManager;
 
 import java.util.Map;
 import java.util.concurrent.Future;
 import org.apache.flink.runtime.taskexecutor.GlobalAggregateManager;
-import org.apache.flink.runtime.util.profiling.FSMetricsManager;
-import org.apache.flink.runtime.util.profiling.KafkaMetricsManager;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
-import org.apache.flink.runtime.util.profiling.NoopMetricsManager;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -95,44 +88,33 @@ public class RuntimeEnvironment implements Environment {
 
 	private final Task containingTask;
 
-	public final TaskRescaleManager taskRescaleManager;
-
-	public final TaskOperatorManager taskOperatorManager;
-
-	public final KeyGroupRange keyGroupRange;
-
-	private final MetricsManager metricsManager;
-
 	// ------------------------------------------------------------------------
 
 	public RuntimeEnvironment(
-		JobID jobId,
-		JobVertexID jobVertexId,
-		ExecutionAttemptID executionId,
-		ExecutionConfig executionConfig,
-		TaskInfo taskInfo,
-		Configuration jobConfiguration,
-		Configuration taskConfiguration,
-		ClassLoader userCodeClassLoader,
-		MemoryManager memManager,
-		IOManager ioManager,
-		BroadcastVariableManager bcVarManager,
-		TaskStateManager taskStateManager,
-		GlobalAggregateManager aggregateManager,
-		AccumulatorRegistry accumulatorRegistry,
-		TaskKvStateRegistry kvStateRegistry,
-		InputSplitProvider splitProvider,
-		Map<String, Future<Path>> distCacheEntries,
-		ResultPartitionWriter[] writers,
-		InputGate[] inputGates,
-		TaskEventDispatcher taskEventDispatcher,
-		CheckpointResponder checkpointResponder,
-		TaskManagerRuntimeInfo taskManagerInfo,
-		TaskRescaleManager taskRescaleManager,
-		TaskOperatorManager taskOperatorManager,
-		KeyGroupRange keyGroupRange,
-		TaskMetricGroup metrics,
-		Task containingTask) {
+			JobID jobId,
+			JobVertexID jobVertexId,
+			ExecutionAttemptID executionId,
+			ExecutionConfig executionConfig,
+			TaskInfo taskInfo,
+			Configuration jobConfiguration,
+			Configuration taskConfiguration,
+			ClassLoader userCodeClassLoader,
+			MemoryManager memManager,
+			IOManager ioManager,
+			BroadcastVariableManager bcVarManager,
+			TaskStateManager taskStateManager,
+			GlobalAggregateManager aggregateManager,
+			AccumulatorRegistry accumulatorRegistry,
+			TaskKvStateRegistry kvStateRegistry,
+			InputSplitProvider splitProvider,
+			Map<String, Future<Path>> distCacheEntries,
+			ResultPartitionWriter[] writers,
+			InputGate[] inputGates,
+			TaskEventDispatcher taskEventDispatcher,
+			CheckpointResponder checkpointResponder,
+			TaskManagerRuntimeInfo taskManagerInfo,
+			TaskMetricGroup metrics,
+			Task containingTask) {
 
 		this.jobId = checkNotNull(jobId);
 		this.jobVertexId = checkNotNull(jobVertexId);
@@ -157,32 +139,7 @@ public class RuntimeEnvironment implements Environment {
 		this.checkpointResponder = checkNotNull(checkpointResponder);
 		this.taskManagerInfo = checkNotNull(taskManagerInfo);
 		this.containingTask = containingTask;
-		this.taskRescaleManager = checkNotNull(taskRescaleManager);
-		this.taskOperatorManager = checkNotNull(taskOperatorManager);
 		this.metrics = metrics;
-		this.keyGroupRange = keyGroupRange;
-
-		if (taskInfo.getTaskNameWithSubtasks().contains("Sink")) {
-			this.metricsManager = new NoopMetricsManager(
-				taskInfo.getTaskNameWithSubtasks(),
-				this.jobVertexId,
-				jobConfiguration,
-				taskInfo.getIdInModel(),
-				taskInfo.getMaxNumberOfParallelSubtasks());
-		} else {
-//			this.metricsManager = new KafkaMetricsManager(
-//				taskInfo.getTaskNameWithSubtasks(),
-//				this.jobVertexId,
-//				jobConfiguration,
-//				taskInfo.getIdInModel(),
-//				taskInfo.getMaxNumberOfParallelSubtasks());
-			this.metricsManager = new FSMetricsManager(
-				taskInfo.getTaskNameWithSubtasks(),
-				this.jobVertexId,
-				jobConfiguration,
-				taskInfo.getIdInModel(),
-				taskInfo.getMaxNumberOfParallelSubtasks());
-		}
 	}
 
 	// ------------------------------------------------------------------------
@@ -331,10 +288,5 @@ public class RuntimeEnvironment implements Environment {
 	@Override
 	public void failExternally(Throwable cause) {
 		this.containingTask.failExternally(cause);
-	}
-
-	@Override
-	public MetricsManager getMetricsManager() {
-		return metricsManager;
 	}
 }

@@ -43,7 +43,5 @@ public enum InputStatus {
 	/**
 	 * Indicator that the input has reached the end of data.
 	 */
-	END_OF_INPUT,
-
-	NEED_PAUSE;
+	END_OF_INPUT
 }

@@ -31,17 +31,17 @@ import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.concurrent.FutureUtils;
-import org.apache.flink.runtime.controlplane.PrimitiveOperation;
-import org.apache.flink.runtime.controlplane.abstraction.ExecutionPlan;
-import org.apache.flink.runtime.controlplane.abstraction.resource.AbstractSlot;
-import org.apache.flink.runtime.controlplane.abstraction.resource.FlinkSlot;
 import org.apache.flink.runtime.controlplane.streammanager.StreamManagerGateway;
 import org.apache.flink.runtime.controlplane.streammanager.StreamManagerId;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
-import org.apache.flink.runtime.heartbeat.*;
+import org.apache.flink.runtime.heartbeat.HeartbeatListener;
+import org.apache.flink.runtime.heartbeat.HeartbeatManager;
+import org.apache.flink.runtime.heartbeat.HeartbeatServices;
+import org.apache.flink.runtime.heartbeat.HeartbeatTarget;
+import org.apache.flink.runtime.heartbeat.NoOpHeartbeatManager;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.PartitionTrackerFactory;
@@ -49,7 +49,6 @@ import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobmanager.OnCompletionActions;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.jobmaster.factories.JobManagerJobMetricGroupFactory;
@@ -72,12 +71,9 @@ import org.apache.flink.runtime.registration.RegisteredRpcConnection;
 import org.apache.flink.runtime.registration.RegistrationResponse;
 import org.apache.flink.runtime.registration.RetryingRegistration;
 import org.apache.flink.runtime.registration.RetryingRegistrationConfiguration;
-import org.apache.flink.runtime.rescale.JobRescaleAction;
 import org.apache.flink.runtime.rescale.JobRescaleCoordinator;
-import org.apache.flink.runtime.rescale.reconfigure.AbstractCoordinator;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerGateway;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerId;
-import org.apache.flink.runtime.resourcemanager.slotmanager.TaskManagerSlot;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureStatsTracker;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStatsResponse;
@@ -98,14 +94,25 @@ import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.InstantiationUtil;
+
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.Function;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeoutException;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
@@ -196,9 +203,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	@Nullable
 	private String streamManagerAddress;
-
-	@Nullable
-	private CompletableFuture<StreamManagerGateway> streamManagerGatewayFuture = new CompletableFuture<>();
 
 	@Nullable
 	private EstablishedResourceManagerConnection establishedResourceManagerConnection;
@@ -474,45 +478,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 	}
 
 	@Override
-	public void triggerJobRescale(JobRescaleAction.RescaleParamsWrapper wrapper,
-								  JobGraph jobGraph,
-								  List<JobVertexID> involvedUpStream,
-								  List<JobVertexID> involvedDownStream) {
-		validateRunsInMainThread();
-
-		JobRescaleCoordinator rescaleCoordinator = schedulerNG.getJobRescaleCoordinator();
-		switch (wrapper.type) {
-			case REPARTITION:
-				rescaleCoordinator.repartition(wrapper.vertexID, wrapper.jobRescalePartitionAssignment,
-					jobGraph, involvedUpStream, involvedDownStream);
-				break;
-			case SCALE_OUT:
-				rescaleCoordinator.scaleOut(wrapper.vertexID, wrapper.newParallelism, wrapper.jobRescalePartitionAssignment,
-					jobGraph, involvedUpStream, involvedDownStream);
-				break;
-			case SCALE_IN:
-				rescaleCoordinator.scaleIn(wrapper.vertexID, wrapper.newParallelism, wrapper.jobRescalePartitionAssignment,
-					jobGraph, involvedUpStream, involvedDownStream);
-				break;
-		}
-	}
-
-	@Override
-	public void triggerOperatorUpdate(JobGraph jobGraph, JobVertexID targetVertexID, OperatorID operatorID){
-		validateRunsInMainThread();
-		JobRescaleCoordinator rescaleCoordinator = schedulerNG.getJobRescaleCoordinator();
-		rescaleCoordinator.getOperatorUpdateCoordinator().updateFunction(jobGraph, targetVertexID, operatorID);
-	}
-
-	@Override
-	public <M>void callOperations(Function<PrimitiveOperation<M>, CompletableFuture<?>> operationCaller){
-		validateRunsInMainThread();
-		JobRescaleCoordinator rescaleCoordinator = schedulerNG.getJobRescaleCoordinator();
-		operationCaller.apply((PrimitiveOperation<M>) rescaleCoordinator.getOperatorUpdateCoordinator());
-	}
-
-
-	@Override
 	public CompletableFuture<KvStateLocation> requestKvStateLocation(final JobID jobId, final String registrationName) {
 		try {
 			return CompletableFuture.completedFuture(schedulerNG.requestKvStateLocation(jobId, registrationName));
@@ -591,11 +556,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			log.warn("Cannot fail slot " + allocationId + " because the TaskManager " +
 				taskManagerId + " is unknown.");
 		}
-	}
-
-	@Override
-	public CompletableFuture<Collection<TaskManagerSlot>> getAllSlots() {
-		return slotPool.getAllSlots();
 	}
 
 	private void internalFailAllocation(AllocationID allocationId, Exception cause) {
@@ -911,6 +871,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		// register self as job status change listener
 		jobStatusListener = new JobManagerJobStatusListener();
 		schedulerNG.registerJobStatusListener(jobStatusListener);
+
 		schedulerNG.startScheduling();
 	}
 
@@ -963,30 +924,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final ArchivedExecutionGraph archivedExecutionGraph = schedulerNG.requestJob();
 			scheduledExecutorService.execute(() -> jobCompletionActions.jobReachedGloballyTerminalState(archivedExecutionGraph));
 		}
-		//todo notify upper stream manager or make sm periodly check job status?
-		checkState(streamManagerGatewayFuture != null);
-		streamManagerGatewayFuture.thenAccept(
-			streamManagerGateway -> {
-				ExecutionPlan jobAbstraction = null;
-				if(newJobStatus == JobStatus.RUNNING){
-					AbstractCoordinator abstractCoordinator = schedulerNG.getJobRescaleCoordinator().getOperatorUpdateCoordinator();
-					jobAbstraction = abstractCoordinator.getHeldExecutionPlanCopy();
-				}
-				ExecutionPlan finalJobAbstraction = jobAbstraction;
-				slotPool.getAllSlots().thenAccept(taskManagerSlots -> {
-					// compute
-					Map<String, List<AbstractSlot>> slotMap = new HashMap<>();
-					taskManagerSlots.forEach(taskManagerSlot -> {
-						AbstractSlot slot = FlinkSlot.fromTaskManagerSlot(taskManagerSlot);
-						List<AbstractSlot> slots = slotMap.computeIfAbsent(slot.getLocation(), k -> new ArrayList<>());
-						slots.add(slot);
-					});
-					finalJobAbstraction.setSlotMap(slotMap);
-					streamManagerGateway.jobStatusChanged(
-						jobGraph.getJobID(), newJobStatus, timestamp, error, finalJobAbstraction
-					);
-				});
-			});
 	}
 
 	private void notifyOfNewResourceManagerLeader(final String newResourceManagerAddress, final ResourceManagerId resourceManagerId) {
@@ -1043,7 +980,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		log.info("Connecting to StreamManager ...");
 
 		this.streamingLeaderService.start(
-			new StreamingLeaderService.JobMasterInfo(getFencingToken(),
+			new StreamingLeaderService.JobMasterLocation(getFencingToken(),
 				resourceId,
 				getAddress(),
 				jobGraph.getJobID()),
@@ -1174,26 +1111,13 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 
 		@Override
-		public void streamManagerGainedLeadership(JobID jobId, StreamManagerGateway streamManagerGateway, JobMasterRegistrationSuccess registrationMessage) {
-			log.info("a new stream manager gained Leadership:" + streamManagerGateway.getAddress());
-			schedulerNG.getJobRescaleCoordinator().setStreamManagerGateway(streamManagerGateway);
-			AbstractCoordinator abstractCoordinator = schedulerNG.getJobRescaleCoordinator().getOperatorUpdateCoordinator();
-			abstractCoordinator.setStreamRelatedInstanceFactory(streamManagerGateway.getStreamRelatedInstanceFactory());
-
-			assert streamManagerGatewayFuture != null;
-			streamManagerGatewayFuture.complete(streamManagerGateway);
+		public void streamManagerGainedLeadership(JobID jobId, StreamManagerGateway streamManagerGateway, JMTMRegistrationSuccess registrationMessage) {
+			runAsync(() -> log.info("a new stream mamanger gained Leadership"));
 		}
 
 		@Override
 		public void streamManagerLostLeadership(JobID jobId, StreamManagerId streamManagerId) {
-			try {
-				assert streamManagerGatewayFuture != null;
-				checkState(streamManagerGatewayFuture.get(0L, TimeUnit.SECONDS).getFencingToken() == streamManagerId,
-					"The given stream manager id is not consistent with current stream manager id");
-				streamManagerGatewayFuture = new CompletableFuture<>();
-			} catch (InterruptedException | ExecutionException | TimeoutException e) {
-				e.printStackTrace();
-			}
+
 		}
 
 		@Override

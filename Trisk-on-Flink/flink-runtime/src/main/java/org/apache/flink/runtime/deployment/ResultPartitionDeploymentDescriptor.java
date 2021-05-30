@@ -22,7 +22,6 @@ import org.apache.flink.runtime.io.network.partition.ResultPartition;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
-import org.apache.flink.runtime.rescale.RescaleID;
 import org.apache.flink.runtime.shuffle.PartitionDescriptor;
 import org.apache.flink.runtime.shuffle.ShuffleDescriptor;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
@@ -79,10 +78,6 @@ public class ResultPartitionDeploymentDescriptor implements Serializable {
 
 	public int getNumberOfSubpartitions() {
 		return partitionDescriptor.getNumberOfSubpartitions();
-	}
-
-	public void setNumberOfSubpartitions(int numberOfSubpartitions) {
-		partitionDescriptor.setNumberOfSubpartitions(numberOfSubpartitions);
 	}
 
 	public int getMaxParallelism() {

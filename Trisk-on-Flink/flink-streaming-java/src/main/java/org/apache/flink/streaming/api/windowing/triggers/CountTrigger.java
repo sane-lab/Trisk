@@ -34,10 +34,6 @@ import org.apache.flink.streaming.api.windowing.windows.Window;
 public class CountTrigger<W extends Window> extends Trigger<Object, W> {
 	private static final long serialVersionUID = 1L;
 
-	public long getMaxCount() {
-		return maxCount;
-	}
-
 	private final long maxCount;
 
 	private final ReducingStateDescriptor<Long> stateDesc =

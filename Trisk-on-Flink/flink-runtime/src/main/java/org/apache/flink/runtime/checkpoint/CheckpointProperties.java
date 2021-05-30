@@ -179,10 +179,6 @@ public class CheckpointProperties implements Serializable {
 		return checkpointType.isSavepoint();
 	}
 
-	public boolean isRescalepoint() {
-		return checkpointType.isRescalepoint();
-	}
-
 	/**
 	 * Returns whether the checkpoint properties describe a synchronous savepoint/checkpoint.
 	 *
@@ -289,15 +285,6 @@ public class CheckpointProperties implements Serializable {
 			false); // Retain on suspension
 
 
-	private static final CheckpointProperties RESCALINGPOINT = new CheckpointProperties(
-		true,
-		CheckpointType.RESCALEPOINT,
-		true,
-		true,  // Delete on success
-		true,  // Delete on cancellation
-		true,  // Delete on failure
-		true); // Delete on suspension
-
 	/**
 	 * Creates the checkpoint properties for a (manually triggered) savepoint.
 	 *
@@ -312,10 +299,6 @@ public class CheckpointProperties implements Serializable {
 
 	public static CheckpointProperties forSyncSavepoint() {
 		return SYNC_SAVEPOINT;
-	}
-
-	public static CheckpointProperties forRescalePoint() {
-		return RESCALINGPOINT;
 	}
 
 	/**

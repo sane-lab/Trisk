@@ -54,7 +54,6 @@ import org.apache.flink.runtime.resourcemanager.registration.JobManagerRegistrat
 import org.apache.flink.runtime.resourcemanager.registration.WorkerRegistration;
 import org.apache.flink.runtime.resourcemanager.slotmanager.ResourceActions;
 import org.apache.flink.runtime.resourcemanager.slotmanager.SlotManager;
-import org.apache.flink.runtime.resourcemanager.slotmanager.TaskManagerSlot;
 import org.apache.flink.runtime.rest.messages.taskmanager.TaskManagerInfo;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.runtime.rpc.FencedRpcEndpoint;
@@ -268,10 +267,6 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 	//  RPC methods
 	// ------------------------------------------------------------------------
 
-	public CompletableFuture<Collection<TaskManagerSlot>> getAllSlots() {
-		return CompletableFuture.completedFuture(slotManager.getAllSlots());
-	}
-
 	@Override
 	public CompletableFuture<RegistrationResponse> registerJobManager(
 			final JobMasterId jobMasterId,
@@ -448,36 +443,6 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 			return FutureUtils.completedExceptionally(new ResourceManagerException("Could not find registered job manager for job " + jobId + '.'));
 		}
 	}
-
-	public CompletableFuture<Acknowledge> requestSlot(JobMasterId jobMasterId, SlotRequest slotRequest, final Time timeout, SlotID slotID) {
-		JobID jobId = slotRequest.getJobId();
-		JobManagerRegistration jobManagerRegistration = jobManagerRegistrations.get(jobId);
-
-		if (null != jobManagerRegistration) {
-			if (Objects.equals(jobMasterId, jobManagerRegistration.getJobMasterId())) {
-				log.info("Request slot {} with profile {} for job {} with allocation id {}.",
-					slotID,
-					slotRequest.getResourceProfile(),
-					slotRequest.getJobId(),
-					slotRequest.getAllocationId());
-
-				try {
-					slotManager.allocateSlot(slotRequest, slotID);
-				} catch (ResourceManagerException e) {
-					return FutureUtils.completedExceptionally(e);
-				}
-
-				return CompletableFuture.completedFuture(Acknowledge.get());
-			} else {
-				return FutureUtils.completedExceptionally(new ResourceManagerException("The job leader's id " +
-					jobManagerRegistration.getJobMasterId() + " does not match the received id " + jobMasterId + '.'));
-			}
-
-		} else {
-			return FutureUtils.completedExceptionally(new ResourceManagerException("Could not find registered job manager for job " + jobId + '.'));
-		}
-	}
-
 
 	@Override
 	public void cancelSlotRequest(AllocationID allocationID) {

@@ -290,8 +290,7 @@ public class InterruptSensitiveRestoreTest {
 			UnregisteredMetricGroups.createUnregisteredTaskMetricGroup(),
 			new NoOpResultPartitionConsumableNotifier(),
 			mock(PartitionProducerStateChecker.class),
-			mock(Executor.class),
-			null);
+			mock(Executor.class));
 	}
 
 	// ------------------------------------------------------------------------

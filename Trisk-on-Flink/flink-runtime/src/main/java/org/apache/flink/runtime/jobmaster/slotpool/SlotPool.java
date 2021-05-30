@@ -22,14 +22,12 @@ import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
-import org.apache.flink.runtime.clusterframework.types.SlotID;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.jobmanager.slots.TaskManagerGateway;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.jobmaster.SlotRequestId;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerGateway;
-import org.apache.flink.runtime.resourcemanager.slotmanager.TaskManagerSlot;
 import org.apache.flink.runtime.taskexecutor.slot.SlotOffer;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 
@@ -38,7 +36,6 @@ import javax.annotation.Nonnull;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 
 /**
  * The Interface of a slot pool that manages slots.
@@ -187,12 +184,4 @@ public interface SlotPool extends AllocatedSlotActions, AutoCloseable {
 	 * @return the allocated slots on the task manager
 	 */
 	AllocatedSlotReport createAllocatedSlotReport(ResourceID taskManagerId);
-
-	CompletableFuture<PhysicalSlot> requestAllocatedSlot(
-		@Nonnull SlotRequestId slotRequestId,
-		@Nonnull ResourceProfile resourceProfile,
-		Time timeout,
-		SlotID slotId);
-
-	CompletableFuture<Collection<TaskManagerSlot>> getAllSlots();
 }

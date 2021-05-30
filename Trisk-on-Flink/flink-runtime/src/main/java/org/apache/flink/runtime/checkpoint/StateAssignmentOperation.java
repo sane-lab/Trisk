@@ -21,22 +21,21 @@ package org.apache.flink.runtime.checkpoint;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.core.fs.FSDataInputStream;
-import org.apache.flink.core.memory.DataInputViewStreamWrapper;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobgraph.OperatorInstanceID;
 import org.apache.flink.runtime.rescale.JobRescalePartitionAssignment;
-import org.apache.flink.runtime.rescale.reconfigure.OperatorWorkloadsAssignment;
-import org.apache.flink.runtime.rescale.reconfigure.RemappingAssignment;
-import org.apache.flink.runtime.state.*;
+import org.apache.flink.runtime.state.KeyGroupRange;
+import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
+import org.apache.flink.runtime.state.KeyGroupsStateHandle;
+import org.apache.flink.runtime.state.KeyedStateHandle;
+import org.apache.flink.runtime.state.OperatorStateHandle;
 import org.apache.flink.util.Preconditions;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -45,7 +44,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
@@ -65,7 +63,7 @@ public class StateAssignmentOperation {
 	private final boolean allowNonRestoredState;
 
 	private boolean isForceRescale;
-	private OperatorWorkloadsAssignment jobRescalePartitionAssignment;
+	private JobRescalePartitionAssignment jobRescalePartitionAssignment;
 
 	public StateAssignmentOperation(
 		long restoreCheckpointId,
@@ -83,15 +81,7 @@ public class StateAssignmentOperation {
 		this.isForceRescale = isForceRescale;
 	}
 
-	public void setRedistributeStrategy(RemappingAssignment jobRescalePartitionAssignment) {
-//		this.jobRescalePartitionAssignment = jobRescalePartitionAssignment;
-	}
-
 	public void setRedistributeStrategy(JobRescalePartitionAssignment jobRescalePartitionAssignment) {
-//		this.jobRescalePartitionAssignment = jobRescalePartitionAssignment;
-	}
-
-	public void setRedistributeStrategy(OperatorWorkloadsAssignment jobRescalePartitionAssignment) {
 		this.jobRescalePartitionAssignment = jobRescalePartitionAssignment;
 	}
 
@@ -183,22 +173,13 @@ public class StateAssignmentOperation {
 		Map<OperatorInstanceID, List<KeyedStateHandle>> newRawKeyedState =
 			new HashMap<>(expectedNumberOfSubTasks);
 
-		if (jobRescalePartitionAssignment == null) {
-			reDistributeKeyedStates(
-				operatorStates,
-				newParallelism,
-				operatorIDs,
-				keyGroupPartitions,
-				newManagedKeyedState,
-				newRawKeyedState);
-		} else {
-			reDistributeKeyedStatesWithPartitionAssignment(
-				operatorStates,
-				newParallelism,
-				operatorIDs,
-				newManagedKeyedState,
-				newRawKeyedState);
-		}
+		reDistributeKeyedStates(
+			operatorStates,
+			newParallelism,
+			operatorIDs,
+			keyGroupPartitions,
+			newManagedKeyedState,
+			newRawKeyedState);
 
 		/*
 		 *  An executionJobVertex's all state handles needed to restore are something like a matrix
@@ -316,111 +297,6 @@ public class StateAssignmentOperation {
 				newRawKeyedState.put(instanceID, subKeyedStates.f1);
 			}
 		}
-	}
-
-	private void reDistributeKeyedStatesWithPartitionAssignment(
-		List<OperatorState> oldOperatorStates,
-		int newParallelism,
-		List<OperatorID> newOperatorIDs,
-		Map<OperatorInstanceID, List<KeyedStateHandle>> newManagedKeyedState,
-		Map<OperatorInstanceID, List<KeyedStateHandle>> newRawKeyedState) {
-
-		checkState(newOperatorIDs.size() == oldOperatorStates.size(),
-			"This method still depends on the order of the new and old operators");
-
-		for (int operatorIndex = 0; operatorIndex < newOperatorIDs.size(); operatorIndex++) {
-			OperatorState operatorState = oldOperatorStates.get(operatorIndex);
-
-			// For managed state, hashedKeyGroup -> (offset, streamStateHandle)
-			Map<Integer, Tuple2<Long, StreamStateHandle>> hashedKeyGroupToManagedStateHandle =
-				getHashedKeyGroupToHandleFromOperatorState(operatorState, OperatorSubtaskState::getManagedKeyedState);
-
-			Map<Integer, Tuple2<Long, StreamStateHandle>> hashedKeyGroupToRawStateHandle =
-				getHashedKeyGroupToHandleFromOperatorState(operatorState, OperatorSubtaskState::getRawKeyedState);
-
-			Map<Integer, List<Integer>> partitionAssignment = jobRescalePartitionAssignment.getPartitionAssignment();
-
-			for (int subTaskIndex = 0; subTaskIndex < newParallelism; subTaskIndex++) {
-				OperatorInstanceID instanceID = OperatorInstanceID.of(subTaskIndex, newOperatorIDs.get(operatorIndex));
-
-				List<KeyedStateHandle> subManagedKeyedStates = new ArrayList<>();
-				List<KeyedStateHandle> subRawKeyedStates = new ArrayList<>();;
-
-				for (int i = 0; i < partitionAssignment.get(subTaskIndex).size(); i++) {
-					// the keyGroup we get from partitionAssignment is the hashed one (most origin without remapping)
-					int assignedKeyGroup = partitionAssignment.get(subTaskIndex).get(i);
-
-					KeyGroupRange alignedKeyGroupRange = jobRescalePartitionAssignment.getAlignedKeyGroupRange(subTaskIndex);
-					// keyGroupRange which length is 1
-					KeyGroupRange rangeOfOneKeyGroupRange = KeyGroupRange.of(alignedKeyGroupRange.getKeyGroupId(i), alignedKeyGroupRange.getKeyGroupId(i));
-
-					Tuple2<Long, StreamStateHandle> managedStateTuple = hashedKeyGroupToManagedStateHandle.get(assignedKeyGroup);
-					if (managedStateTuple != null) {
-						subManagedKeyedStates.add(new KeyGroupsStateHandle(
-							new KeyGroupRangeOffsets(rangeOfOneKeyGroupRange, new long[]{managedStateTuple.f0}),
-							managedStateTuple.f1));
-					}
-
-					Tuple2<Long, StreamStateHandle> rawStateTuple = hashedKeyGroupToRawStateHandle.get(assignedKeyGroup);
-					if (rawStateTuple != null) {
-						subRawKeyedStates.add(new KeyGroupsStateHandle(
-							new KeyGroupRangeOffsets(rangeOfOneKeyGroupRange, new long[]{rawStateTuple.f0}),
-							rawStateTuple.f1));
-					}
-				}
-
-				newManagedKeyedState.put(instanceID, subManagedKeyedStates);
-				newRawKeyedState.put(instanceID, subRawKeyedStates);
-			}
-		}
-	}
-
-	private static Map<Integer, Tuple2<Long, StreamStateHandle>> getHashedKeyGroupToHandleFromOperatorState(
-		OperatorState operatorState,
-		Function<OperatorSubtaskState, StateObjectCollection<KeyedStateHandle>> applier) {
-
-		Map<Integer, Tuple2<Long, StreamStateHandle>> hashedKeyGroupToHandle = new HashMap<>();
-
-		for (int i = 0; i < operatorState.getParallelism(); i++) {
-			if (operatorState.getState(i) != null) {
-				for (KeyedStateHandle keyedStateHandle : applier.apply(operatorState.getState(i))) {
-					if (keyedStateHandle != null) {
-						if (keyedStateHandle instanceof KeyGroupsStateHandle) {
-
-							KeyGroupsStateHandle keyGroupsStateHandle = (KeyGroupsStateHandle) keyedStateHandle;
-							KeyGroupRange keyGroupRangeFromOldState = keyGroupsStateHandle.getKeyGroupRange();
-
-							if (keyGroupRangeFromOldState.equals(KeyGroupRange.EMPTY_KEY_GROUP_RANGE)) {
-								continue;
-							}
-
-							int start = keyGroupRangeFromOldState.getStartKeyGroup();
-							int end = keyGroupRangeFromOldState.getEndKeyGroup();
-
-							try (FSDataInputStream fsDataInputStream = keyGroupsStateHandle.openInputStream()) {
-								DataInputViewStreamWrapper inView = new DataInputViewStreamWrapper(fsDataInputStream);
-
-								for (int alignedOldKeyGroup = start; alignedOldKeyGroup <= end; alignedOldKeyGroup++) {
-									long offset = keyGroupsStateHandle.getOffsetForKeyGroup(alignedOldKeyGroup);
-
-									fsDataInputStream.seek(offset);
-									int hashedKeyGroup = inView.readInt();
-
-									hashedKeyGroupToHandle.put(
-										hashedKeyGroup,
-										Tuple2.of(offset, keyGroupsStateHandle.getDelegateStateHandle()));
-								}
-							} catch (IOException err) {
-								throw new RuntimeException(err);
-							}
-						} else {
-							throw new RuntimeException("++++++ unsupported KeyedStateHandle for state migration");
-						}
-					}
-				}
-			}
-		}
-		return hashedKeyGroupToHandle;
 	}
 
 	// TODO rewrite based on operator id

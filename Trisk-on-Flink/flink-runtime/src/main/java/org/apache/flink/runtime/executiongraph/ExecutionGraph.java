@@ -853,17 +853,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		}
 
 		this.numVerticesTotal = totalVertices;
-
-		updatePartitionReleaseStrategy();
 	}
-
-	public void updatePartitionReleaseStrategy(){
-		// the topology assigning should happen before notifying new vertices to failoverStrategy
-		LOG.info("++++++update partition release strategy");
-		executionTopology = new DefaultExecutionTopology(this);
-		partitionReleaseStrategy = partitionReleaseStrategyFactory.createInstance(getSchedulingTopology());
-	}
-
 
 	public boolean isLegacyScheduling() {
 		return legacyScheduling;
@@ -1478,10 +1468,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		if (attempt != null) {
 			try {
 				final boolean stateUpdated = updateStateInternal(state, attempt);
-				if (checkValidityOfExecutionState(state)) {
-					maybeReleasePartitions(attempt);
-				}
-
+				maybeReleasePartitions(attempt);
 				return stateUpdated;
 			}
 			catch (Throwable t) {
@@ -1495,21 +1482,6 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		else {
 			return false;
 		}
-	}
-
-	public boolean checkValidityOfExecutionState(TaskExecutionState state) {
-		// the validity of execition state means whether we have dropped it already from pipelineRegion
-		final Execution attempt = currentExecutions.get(state.getID());
-		if (attempt == null) {
-			return false;
-		}
-		// if executionVertex not in the current ejv, skip, because we updated the pipelineRegion
-		for (ExecutionVertex vertex : tasks.get(attempt.getVertex().getJobvertexId()).getTaskVertices()) {
-			if (attempt.getVertex().getID() == vertex.getID()) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private boolean updateStateInternal(final TaskExecutionState state, final Execution attempt) {
@@ -1581,7 +1553,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 
 		final ExecutionVertex taskVertex = taskVertices[subtaskIndex];
 		final Execution execution = taskVertex.getCurrentExecutionAttempt();
-		return new ResultPartitionID(resultPartitionId, execution.getAttemptId(), taskVertex.getRescaleId());
+		return new ResultPartitionID(resultPartitionId, execution.getAttemptId());
 	}
 
 	/**

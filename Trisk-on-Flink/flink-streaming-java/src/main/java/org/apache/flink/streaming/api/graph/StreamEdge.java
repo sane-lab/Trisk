@@ -103,10 +103,6 @@ public class StreamEdge implements Serializable {
 		this.edgeId = sourceVertex + "_" + targetVertex + "_" + typeNumber + "_" + selectedNames
 				+ "_" + outputPartitioner;
 	}
-	
-	public String getEdgeId() {
-		return edgeId;
-	}
 
 	public int getSourceId() {
 		return sourceId;

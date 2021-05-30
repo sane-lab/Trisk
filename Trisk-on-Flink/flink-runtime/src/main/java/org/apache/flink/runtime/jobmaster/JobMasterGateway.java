@@ -24,7 +24,6 @@ import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.checkpoint.CheckpointCoordinatorGateway;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
-import org.apache.flink.runtime.controlplane.PrimitiveOperation;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
@@ -33,16 +32,11 @@ import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.io.network.partition.ResultPartition;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
-import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
 import org.apache.flink.runtime.registration.RegistrationResponse;
-import org.apache.flink.runtime.rescale.JobRescaleAction;
-import org.apache.flink.runtime.rescale.reconfigure.AbstractCoordinator;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerId;
-import org.apache.flink.runtime.resourcemanager.slotmanager.TaskManagerSlot;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStatsResponse;
 import org.apache.flink.runtime.rpc.FencedRpcGateway;
 import org.apache.flink.runtime.rpc.RpcTimeout;
@@ -54,10 +48,7 @@ import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 import javax.annotation.Nullable;
 
 import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
 /**
  * {@link JobMaster} rpc gateway interface.
@@ -279,20 +270,4 @@ public interface JobMasterGateway extends
 	 * @return The updated aggregate
 	 */
 	CompletableFuture<Object> updateGlobalAggregate(String aggregateName, Object aggregand, byte[] serializedAggregationFunction);
-
-	void triggerJobRescale(
-		JobRescaleAction.RescaleParamsWrapper wrapper,
-		JobGraph jobGraph, List<JobVertexID> involvedUpStream,
-		List<JobVertexID> involvedDownStream);
-
-	/**
-	 * Notify StreamManager's StreamSwitchAdaptor that changes completed:
-	 * Maybe 1. Assign states for repartition, 2. Rescale and assign states
-	 * @param targetVertexID the JobVertexID of target vertex
-	 */
-	void triggerOperatorUpdate(JobGraph jobGraph, JobVertexID targetVertexID, OperatorID operatorID);
-
-	default <M>void callOperations(Function<PrimitiveOperation<M>, CompletableFuture<?>> operationCaller) {}
-
-	CompletableFuture<Collection<TaskManagerSlot>> getAllSlots();
 }

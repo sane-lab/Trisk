@@ -45,7 +45,6 @@ import org.apache.flink.runtime.shuffle.ShuffleDescriptor;
 import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
 import org.apache.flink.runtime.shuffle.ShuffleIOOwnerContext;
 import org.apache.flink.runtime.taskmanager.NettyShuffleEnvironmentConfiguration;
-import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.Preconditions;
 
 import org.slf4j.Logger;
@@ -239,16 +238,6 @@ public class NettyShuffleEnvironment implements ShuffleEnvironment<ResultPartiti
 		}
 	}
 
-	public void substituteInputGateChannels(SingleInputGate inputGate, InputGateDeploymentDescriptor igdd) {
-		// this is an alternative implementation of substitute input channels, which makes code more clean,
-		// but need to care about whether this implementation is ok, but all task share this method.
-//		ShuffleDescriptor[] shuffleDescriptors = checkNotNull(igdd.getShuffleDescriptors());
-//
-//		inputGate.reset(shuffleDescriptors.length);
-//
-//		singleInputGateFactory.createInputChannels();
-	}
-
 	/**
 	 * Registers legacy network metric groups before shuffle service refactoring.
 	 *
@@ -285,26 +274,6 @@ public class NettyShuffleEnvironment implements ShuffleEnvironment<ResultPartiti
 			shuffleDescriptor.getClass().getName());
 		inputGate.updateInputChannel(taskExecutorResourceId, (NettyShuffleDescriptor) shuffleDescriptor);
 		return true;
-	}
-
-	public void unregisterPartitions(ResultPartitionWriter[] partitions) {
-		synchronized (lock) {
-			if (partitions != null) {
-				for (ResultPartitionWriter partition : partitions) {
-					resultPartitionManager.releasePartitionsBy(partition);
-					try {
-						partition.close();
-					} catch (Throwable t) {
-						ExceptionUtils.rethrowIfFatalError(t);
-						LOG.error("++++++Failed to release result partition for task {}.", taskExecutorResourceId, t);
-					}
-				}
-			}
-		}
-	}
-
-	public ResourceID getTaskExecutorResourceId() {
-		return taskExecutorResourceId;
 	}
 
 	/*

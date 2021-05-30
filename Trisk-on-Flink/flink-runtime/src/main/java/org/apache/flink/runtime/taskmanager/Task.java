@@ -54,17 +54,14 @@ import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.consumer.InputGate;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobgraph.tasks.AbstractInvokable;
 import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.memory.MemoryManager;
-import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.metrics.groups.TaskMetricGroup;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
 import org.apache.flink.runtime.rescale.RescaleID;
 import org.apache.flink.runtime.rescale.RescaleOptions;
 import org.apache.flink.runtime.rescale.TaskRescaleManager;
-import org.apache.flink.runtime.rescale.reconfigure.TaskOperatorManager;
 import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
 import org.apache.flink.runtime.shuffle.ShuffleIOOwnerContext;
 import org.apache.flink.runtime.state.CheckpointListener;
@@ -274,16 +271,7 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 	/** This class loader should be set as the context class loader for threads that may dynamically load user code. */
 	private ClassLoader userCodeClassLoader;
 
-	private TaskRescaleManager taskRescaleManager = null;
-
-	/** Used to manager this task's operator, for example, the logic function inside the operator */
-	private TaskOperatorManager taskOperatorManager;
-
-	/** The begin KeyGroupRange used to initialize streamtask */
-	@Nullable
-	private KeyGroupRange keyGroupRange;
-
-	private CompletableFuture<Acknowledge> runningFuture = new CompletableFuture<>();
+	private final TaskRescaleManager taskRescaleManager;
 
 	/**
 	 * <p><b>IMPORTANT:</b> This constructor may not start any work that would need to
@@ -317,8 +305,7 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 		@Nonnull TaskMetricGroup metricGroup,
 		ResultPartitionConsumableNotifier resultPartitionConsumableNotifier,
 		PartitionProducerStateChecker partitionProducerStateChecker,
-		Executor executor,
-		@Nullable KeyGroupRange keyGroupRange) {
+		Executor executor) {
 
 		Preconditions.checkNotNull(jobInformation);
 		Preconditions.checkNotNull(taskInformation);
@@ -334,8 +321,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 				taskInformation.getNumberOfSubtasks(),
 				attemptNumber,
 				String.valueOf(slotAllocationId));
-
-		this.taskInfo.setIdInModel(taskInformation.getIdInModel());
 
 		this.jobId = jobInformation.getJobId();
 		this.vertexId = taskInformation.getJobVertexId();
@@ -411,18 +396,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 			//noinspection deprecation
 			((NettyShuffleEnvironment) shuffleEnvironment)
 				.registerLegacyNetworkMetrics(metrics.getIOMetricGroup(), resultPartitionWriters, gates);
-
-			taskRescaleManager = new TaskRescaleManager(
-				jobId,
-				executionId,
-				taskNameWithSubtaskAndId,
-				this,
-				(NettyShuffleEnvironment) shuffleEnvironment,
-				taskEventDispatcher,
-				ioManager,
-				metrics,
-				resultPartitionConsumableNotifier,
-				taskShuffleContext);
 		}
 
 		invokableHasBeenCanceled = new AtomicBoolean(false);
@@ -430,9 +403,14 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 		// finally, create the executing thread, but do not start it
 		executingThread = new Thread(TASK_THREADS_GROUP, this, taskNameWithSubtask);
 
-		this.keyGroupRange = keyGroupRange;
-
-		taskOperatorManager = new TaskOperatorManager(this);
+		taskRescaleManager = new TaskRescaleManager(
+			jobId,
+			executionId,
+			taskNameWithSubtaskAndId,
+			this,
+			ioManager,
+			metrics,
+			resultPartitionConsumableNotifier);
 	}
 
 	// ------------------------------------------------------------------------
@@ -501,10 +479,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 	@VisibleForTesting
 	AbstractInvokable getInvokable() {
 		return invokable;
-	}
-
-	public CompletableFuture<Acknowledge> getRunningFuture() {
-		return runningFuture;
 	}
 
 	@Override
@@ -713,9 +687,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 				taskEventDispatcher,
 				checkpointResponder,
 				taskManagerConfig,
-				taskRescaleManager,
-				taskOperatorManager,
-				keyGroupRange,
 				metrics,
 				this);
 
@@ -746,7 +717,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 			// make sure the user code classloader is accessible thread-locally
 			executingThread.setContextClassLoader(userCodeClassLoader);
 
-			invokable.setRunningFuture(this.runningFuture);
 			// run the invokable
 			invokable.invoke();
 
@@ -775,7 +745,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 		}
 		catch (Throwable t) {
 
-			runningFuture.completeExceptionally(t);
 			// unwrap wrapped exceptions to make stack traces more compact
 			if (t instanceof WrappingRuntimeException) {
 				t = ((WrappingRuntimeException) t).unwrap();
@@ -1273,49 +1242,15 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 	}
 
 	public void assignNewState(KeyGroupRange keyGroupRange, int idInModel, JobManagerTaskRestore taskRestore) {
-		try {
-			LOG.info("++++++ assign new state");
-			taskStateManager.updateTaskRestore(taskRestore);
-		} catch (NullPointerException e){
-			e.printStackTrace();
-			LOG.error("++++++ rescaleTask err", e);
-			System.err.println("may not generate state now or it is a stateless task");
-		} finally {
-			LOG.info("++++++ reinitialize state");
-			invokable.reinitializeState(keyGroupRange, idInModel);
-			taskRescaleManager.finish();
-		}
+		throw new IllegalArgumentException("assignNewState is not suppported now.");
 	}
 
 	public void updateKeyGroupRange(KeyGroupRange keyGroupRange) {
-		LOG.info("++++++ update keyGroupRange : " + keyGroupRange);
-		// it is better to keep those two be consistent.
-		this.keyGroupRange = keyGroupRange;
-		invokable.updateKeyGroupRange(keyGroupRange);
-		// make sure always call finish in Task
-		taskRescaleManager.finish();
-//		throw new IllegalArgumentException("assignNewState is not suppported now.");
+		throw new IllegalArgumentException("assignNewState is not suppported now.");
 	}
 
 	public void createNewResultPartitions() throws IOException {
 		taskRescaleManager.createNewResultPartitions();
-	}
-
-	public void prepareSync(int syncFlag) {
-		try {
-			taskOperatorManager.setSyncRequestFlag(syncFlag);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
-
-	public CompletableFuture<Long> updateOperatorConfig(Configuration updatedConfig, OperatorID operatorID) throws Exception {
-		// since one java process share the same address space, so we only need to update configuration here,
-		// then all other task configuration referenced here will be updated
-		this.taskConfiguration.addAll(updatedConfig);
-		return this.taskOperatorManager.getPauseActionController()
-			.getAckPausedFuture()
-			.thenCompose(ack -> checkNotNull(invokable).updateOperator(updatedConfig, operatorID));
 	}
 
 	// ------------------------------------------------------------------------
@@ -1337,10 +1272,6 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 	@Override
 	public String toString() {
 		return String.format("%s (%s) [%s]", taskNameWithSubtask, executionId, executionState);
-	}
-
-	public CompletableFuture<Void> finalizeRescaleAsync() {
-		return checkNotNull(invokable).finalizeRescale();
 	}
 
 	@VisibleForTesting

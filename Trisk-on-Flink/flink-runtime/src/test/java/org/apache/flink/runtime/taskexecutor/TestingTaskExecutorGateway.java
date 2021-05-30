@@ -21,7 +21,6 @@ package org.apache.flink.runtime.taskexecutor;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple6;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.blob.TransientBlobKey;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
@@ -33,7 +32,6 @@ import org.apache.flink.runtime.deployment.TaskDeploymentDescriptor;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.PartitionInfo;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.messages.Acknowledge;
@@ -127,17 +125,6 @@ public class TestingTaskExecutorGateway implements TaskExecutorGateway {
 	@Override
 	public CompletableFuture<Acknowledge> rescaleTask(ExecutionAttemptID executionAttemptID, TaskDeploymentDescriptor tdd, JobMasterId jobMasterId, RescaleOptions rescaleOptions, Time timeout) {
 		return CompletableFuture.completedFuture(Acknowledge.get());
-	}
-
-	@Override
-	public CompletableFuture<Acknowledge> scheduleSync(ExecutionAttemptID executionAttemptID, int syncFlag, Time timeout) {
-		return null;
-	}
-
-
-	@Override
-	public CompletableFuture<Acknowledge> updateOperator(ExecutionAttemptID executionAttemptID, Configuration updatedConfig, OperatorID operatorID, Time timeout) {
-		return null;
 	}
 
 	@Override

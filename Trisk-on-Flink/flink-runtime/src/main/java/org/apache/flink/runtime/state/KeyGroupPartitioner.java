@@ -149,10 +149,9 @@ public class KeyGroupPartitioner<T> {
 		Preconditions.checkState(partitioningSource.length >= numberOfElements);
 
 		for (int i = 0; i < numberOfElements; ++i) {
-			int hashedKeyGroup = KeyGroupRangeAssignment.assignToKeyGroup(
+			int keyGroup = KeyGroupRangeAssignment.assignToKeyGroup(
 				keyExtractorFunction.extractKeyFromElement(partitioningSource[i]), totalKeyGroups);
-			int alignedKeyGroup = keyGroupRange.mapFromHashedToAligned(hashedKeyGroup);
-			reportKeyGroupOfElementAtIndex(i, alignedKeyGroup);
+			reportKeyGroupOfElementAtIndex(i, keyGroup);
 		}
 	}
 

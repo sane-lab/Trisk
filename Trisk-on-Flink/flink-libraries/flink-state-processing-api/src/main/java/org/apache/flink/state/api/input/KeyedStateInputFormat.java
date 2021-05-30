@@ -179,7 +179,7 @@ public class KeyedStateInputFormat<K, N, OUT> extends RichInputFormat<OUT, KeyGr
 				operatorState.getOperatorID(),
 				operatorState.getOperatorID().toString(),
 				new NeverFireProcessingTimeService(),
-                    null, operator,
+				operator,
 				operator.getKeyType().createSerializer(environment.getExecutionConfig()),
 				registry,
 				getRuntimeContext().getMetricGroup());

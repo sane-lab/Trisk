@@ -225,8 +225,7 @@ public class JvmExitOnFatalErrorTest {
 						UnregisteredMetricGroups.createUnregisteredTaskMetricGroup(),
 						new NoOpResultPartitionConsumableNotifier(),
 						new NoOpPartitionProducerStateChecker(),
-						executor,
-					null);
+						executor);
 
 				System.err.println("starting task thread");
 

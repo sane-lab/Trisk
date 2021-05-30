@@ -94,10 +94,7 @@ public class HeapPriorityQueueSet<T extends HeapPriorityQueueElement>
 		this.totalNumberOfKeyGroups = totalNumberOfKeyGroups;
 		this.keyGroupRange = keyGroupRange;
 
-		// TODO: understand the meaning of this.
-		int keyGroupsInLocalRange = keyGroupRange.getNumberOfKeyGroups();
-		keyGroupsInLocalRange = keyGroupsInLocalRange == 0 ? 1 : keyGroupsInLocalRange;
-
+		final int keyGroupsInLocalRange = keyGroupRange.getNumberOfKeyGroups();
 		final int deduplicationSetSize = 1 + minimumCapacity / keyGroupsInLocalRange;
 		this.deduplicationMapsByKeyGroup = new HashMap[keyGroupsInLocalRange];
 		for (int i = 0; i < keyGroupsInLocalRange; ++i) {
@@ -151,16 +148,15 @@ public class HeapPriorityQueueSet<T extends HeapPriorityQueueElement>
 	}
 
 	private HashMap<T, T> getDedupMapForElement(T element) {
-		int hashedKeyGroup = KeyGroupRangeAssignment.assignToKeyGroup(
+		int keyGroup = KeyGroupRangeAssignment.assignToKeyGroup(
 			keyExtractor.extractKeyFromElement(element),
 			totalNumberOfKeyGroups);
-		return getDedupMapForKeyGroup(hashedKeyGroup);
+		return getDedupMapForKeyGroup(keyGroup);
 	}
 
-	private int globalKeyGroupToLocalIndex(int hashedKeyGroup) {
-		int alignedKeyGroup = keyGroupRange.mapFromHashedToAligned(hashedKeyGroup);
-		checkArgument(keyGroupRange.contains(alignedKeyGroup), "%s does not contain key group %s", keyGroupRange, alignedKeyGroup);
-		return alignedKeyGroup - keyGroupRange.getStartKeyGroup();
+	private int globalKeyGroupToLocalIndex(int keyGroup) {
+		checkArgument(keyGroupRange.contains(keyGroup), "%s does not contain key group %s", keyGroupRange, keyGroup);
+		return keyGroup - keyGroupRange.getStartKeyGroup();
 	}
 
 	@Nonnull

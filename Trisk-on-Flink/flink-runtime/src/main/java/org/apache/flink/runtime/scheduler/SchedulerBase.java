@@ -223,12 +223,7 @@ public abstract class SchedulerBase implements SchedulerNG {
 		this.inputsLocationsRetriever = new ExecutionGraphToInputsLocationsRetrieverAdapter(executionGraph);
 
 		this.jobRescaleCoordinator = new JobRescaleCoordinator(
-			jobGraph, executionGraph);
-	}
-
-	@Override
-	public JobRescaleCoordinator getJobRescaleCoordinator() {
-		return jobRescaleCoordinator;
+			jobGraph, executionGraph, userCodeLoader);
 	}
 
 	private ExecutionGraph createAndRestoreExecutionGraph(
@@ -427,10 +422,6 @@ public abstract class SchedulerBase implements SchedulerNG {
 		return executionGraph.getAllVertices().get(executionVertexId.getJobVertexId()).getTaskVertices()[executionVertexId.getSubtaskIndex()];
 	}
 
-	protected Boolean checkExecutionVertex(final ExecutionVertexID executionVertexId) {
-		return executionGraph.getAllVertices().get(executionVertexId.getJobVertexId()).getTaskVertices().length <= executionVertexId.getSubtaskIndex();
-	}
-
 	protected JobGraph getJobGraph() {
 		return jobGraph;
 	}
@@ -462,7 +453,7 @@ public abstract class SchedulerBase implements SchedulerNG {
 	@Override
 	public void registerJobStatusListener(final JobStatusListener jobStatusListener) {
 		executionGraph.registerJobStatusListener(jobStatusListener);
-//		executionGraph.registerJobStatusListener(jobRescaleCoordinator.createActivatorDeactivator());
+		executionGraph.registerJobStatusListener(jobRescaleCoordinator.createActivatorDeactivator());
 	}
 
 	@Override
@@ -507,7 +498,6 @@ public abstract class SchedulerBase implements SchedulerNG {
 		boolean updateSuccess = executionGraph.updateState(taskExecutionState);
 
 		if (updateSuccess) {
-			log.info("++++++taskExecutionState: " + taskExecutionState);
 			checkState(executionVertexId.isPresent());
 
 			if (isNotifiable(executionVertexId.get(), taskExecutionState)) {
@@ -522,14 +512,6 @@ public abstract class SchedulerBase implements SchedulerNG {
 	private boolean isNotifiable(
 			final ExecutionVertexID executionVertexId,
 			final TaskExecutionState taskExecutionState) {
-
-		// if executionVertex not in the current ejv, skip, otherwise will have nullpointerexception
-//		if (!checkExecutionVertex(executionVertexId)) {
-//			log.info("++++++not exists, skip" + executionVertexId);
-//			return false;
-//		}
-//
-//		log.info("++++++ execution vertex id: " + executionVertexId);
 
 		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
 

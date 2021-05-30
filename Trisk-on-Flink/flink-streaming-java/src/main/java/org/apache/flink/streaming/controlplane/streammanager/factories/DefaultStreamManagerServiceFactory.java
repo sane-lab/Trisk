@@ -20,7 +20,7 @@ package org.apache.flink.streaming.controlplane.streammanager.factories;
 
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
-import org.apache.flink.runtime.execution.librarycache.LibraryCacheManager;
+import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
 import org.apache.flink.streaming.controlplane.streammanager.StreamManager;
 import org.apache.flink.streaming.controlplane.streammanager.StreamManagerConfiguration;
@@ -55,7 +55,6 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 		StreamManagerConfiguration streamManagerConfiguration,
 		RpcService rpcService,
 		HighAvailabilityServices haServices,
-		LibraryCacheManager libraryCacheManager,
 		LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
 		FatalErrorHandler fatalErrorHandler) {
 		this.streamManagerConfiguration = streamManagerConfiguration;
@@ -67,7 +66,7 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 
 	@Override
 	public StreamManager createStreamManagerService(
-		JobGraph jobGraph, ClassLoader userCodeLoader) throws Exception {
+			JobGraph jobGraph) throws Exception {
 		final StreamManagerRuntimeServices streamManagerRuntimeServices = StreamManagerRuntimeServices.fromConfiguration(
 				streamManagerConfiguration,
 				haServices,
@@ -78,7 +77,6 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 			streamManagerConfiguration,
 			ResourceID.generate(),
 			jobGraph,
-			userCodeLoader,
 			haServices,
 			streamManagerRuntimeServices.getJobLeaderIdService(),
 			dispatcherGatewayRetriever,

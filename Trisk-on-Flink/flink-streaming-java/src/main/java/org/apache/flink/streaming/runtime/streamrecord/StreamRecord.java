@@ -36,11 +36,6 @@ public final class StreamRecord<T> extends StreamElement {
 	/** Flag whether the timestamp is actually set. */
 	private boolean hasTimestamp;
 
-	// add a new timestamp to get end-to-end latency
-	private long latencyTimestamp;
-
-	// add a new timestamp to get end-to-end latency
-	private int keyGroup;
 	/**
 	 * Creates a new StreamRecord. The record does not have a timestamp.
 	 */
@@ -58,8 +53,6 @@ public final class StreamRecord<T> extends StreamElement {
 	public StreamRecord(T value, long timestamp) {
 		this.value = value;
 		this.timestamp = timestamp;
-		this.latencyTimestamp = 0l;
-		this.keyGroup=0;
 		this.hasTimestamp = true;
 	}
 
@@ -152,9 +145,7 @@ public final class StreamRecord<T> extends StreamElement {
 	public StreamRecord<T> copy(T valueCopy) {
 		StreamRecord<T> copy = new StreamRecord<>(valueCopy);
 		copy.timestamp = this.timestamp;
-		copy.latencyTimestamp = this.latencyTimestamp;
 		copy.hasTimestamp = this.hasTimestamp;
-		copy.keyGroup = this.keyGroup;
 		return copy;
 	}
 
@@ -165,9 +156,7 @@ public final class StreamRecord<T> extends StreamElement {
 	public void copyTo(T valueCopy, StreamRecord<T> target) {
 		target.value = valueCopy;
 		target.timestamp = this.timestamp;
-		target.latencyTimestamp = this.latencyTimestamp;
 		target.hasTimestamp = this.hasTimestamp;
-		target.keyGroup = this.keyGroup;
 	}
 
 	// ------------------------------------------------------------------------
@@ -199,21 +188,5 @@ public final class StreamRecord<T> extends StreamElement {
 	@Override
 	public String toString() {
 		return "Record @ " + (hasTimestamp ? timestamp : "(undef)") + " : " + value;
-	}
-
-	public long getLatencyTimestamp() {
-		return latencyTimestamp;
-	}
-
-	public void setLatencyTimestamp(long latencyTimestamp) {
-		this.latencyTimestamp = latencyTimestamp;
-	}
-
-	public void setKeyGroup(int keyGroup) {
-		this.keyGroup = keyGroup;
-	}
-
-	public int getKeyGroup() {
-		return this.keyGroup;
 	}
 }

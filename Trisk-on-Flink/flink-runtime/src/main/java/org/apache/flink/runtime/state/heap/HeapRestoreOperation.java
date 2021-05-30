@@ -44,8 +44,6 @@ import org.apache.flink.runtime.state.UncompressedStreamCompressionDecorator;
 import org.apache.flink.runtime.state.metainfo.StateMetaInfoSnapshot;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StateMigrationException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
@@ -63,9 +61,6 @@ import java.util.Map;
  * @param <K> The data type that the serializer serializes.
  */
 public class HeapRestoreOperation<K> implements RestoreOperation<Void> {
-
-	private static final Logger LOG = LoggerFactory.getLogger(HeapRestoreOperation.class);
-
 	private final Collection<KeyedStateHandle> restoreStateHandles;
 	private final StateSerializerProvider<K> keySerializerProvider;
 	private final ClassLoader userCodeClassLoader;
@@ -241,29 +236,17 @@ public class HeapRestoreOperation<K> implements RestoreOperation<Void> {
 			SnappyStreamCompressionDecorator.INSTANCE : UncompressedStreamCompressionDecorator.INSTANCE;
 
 		for (Tuple2<Integer, Long> groupOffset : keyGroupOffsets) {
-//			int keyGroupIndex = groupOffset.f0;
-			int alignedKeyGroupIndex = groupOffset.f0;
+			int keyGroupIndex = groupOffset.f0;
 			long offset = groupOffset.f1;
 
 			// Check that restored key groups all belong to the backend.
-//			Preconditions.checkState(keyGroupRange.contains(keyGroupIndex), "The key group must belong to the backend.");
-			Preconditions.checkState(keyGroupRange.contains(alignedKeyGroupIndex), "The key group must belong to the backend."
-				+ keyGroupRange + " : " + alignedKeyGroupIndex);
+			Preconditions.checkState(keyGroupRange.contains(keyGroupIndex), "The key group must belong to the backend.");
 
 			fsDataInputStream.seek(offset);
 
-			int hashedKeyGroup = inView.readInt();
-			Preconditions.checkState(hashedKeyGroup == keyGroupRange.mapFromAlignedToHashed(alignedKeyGroupIndex),
-				String.format("Unexpected key-group in restore {%s : %s}.", hashedKeyGroup, keyGroupRange.mapFromAlignedToHashed(alignedKeyGroupIndex)));
-
-			LOG.info("++++++-- keyGroupRange: " + keyGroupRange +
-				", alignedKeyGroupIndex: " + alignedKeyGroupIndex +
-				", offset: " + offset +
-				", hashedKeyGroup: " + hashedKeyGroup);
-
-//			int writtenKeyGroupIndex = inView.readInt();
-//			Preconditions.checkState(writtenKeyGroupIndex == keyGroupIndex,
-//				"Unexpected key-group in restore.");
+			int writtenKeyGroupIndex = inView.readInt();
+			Preconditions.checkState(writtenKeyGroupIndex == keyGroupIndex,
+				"Unexpected key-group in restore.");
 
 			try (InputStream kgCompressionInStream =
 					 streamCompressionDecorator.decorateWithCompression(fsDataInputStream)) {
@@ -271,7 +254,7 @@ public class HeapRestoreOperation<K> implements RestoreOperation<Void> {
 				readKeyGroupStateData(
 					kgCompressionInStream,
 					kvStatesById,
-					alignedKeyGroupIndex,
+					keyGroupIndex,
 					numStates,
 					readVersion);
 			}

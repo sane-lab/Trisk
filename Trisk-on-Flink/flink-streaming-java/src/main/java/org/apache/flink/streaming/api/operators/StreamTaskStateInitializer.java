@@ -22,7 +22,6 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.jobgraph.OperatorID;
-import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 
 import javax.annotation.Nonnull;
@@ -42,7 +41,6 @@ public interface StreamTaskStateInitializer {
 	 * @param operatorID the id of the operator for which the context is created. Cannot be null.
 	 * @param operatorClassName the classname of the operator instance for which the context is created. Cannot be null.
 	 * @param processingTimeService
-	 * @param assignedKeyGroupRange
 	 * @param keyContext the key context of the operator instance for which the context is created Cannot be null.
 	 * @param keySerializer the key-serializer for the operator. Can be null.
 	 * @param streamTaskCloseableRegistry the closeable registry to which created closeable objects will be registered.
@@ -54,7 +52,6 @@ public interface StreamTaskStateInitializer {
 		@Nonnull OperatorID operatorID,
 		@Nonnull String operatorClassName,
 		@Nonnull ProcessingTimeService processingTimeService,
-		@Nullable KeyGroupRange assignedKeyGroupRange,
 		@Nonnull KeyContext keyContext,
 		@Nullable TypeSerializer<?> keySerializer,
 		@Nonnull CloseableRegistry streamTaskCloseableRegistry,

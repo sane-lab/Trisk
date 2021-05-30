@@ -19,7 +19,6 @@ package org.apache.flink.runtime.io.network.partition;
 
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.deployment.ResultPartitionDeploymentDescriptor;
-import org.apache.flink.runtime.rescale.RescaleID;
 import org.apache.flink.runtime.shuffle.PartitionDescriptorBuilder;
 import org.apache.flink.runtime.shuffle.ShuffleDescriptor;
 import org.apache.flink.util.TestLogger;
@@ -85,11 +84,6 @@ public class AbstractPartitionTrackerTest extends TestLogger {
 					return hasLocalResources
 						? Optional.of(ResourceID.generate())
 						: Optional.empty();
-				}
-
-				@Override
-				public void updateResultPartitionId(RescaleID rescaleId) {
-
 				}
 			},
 			1,

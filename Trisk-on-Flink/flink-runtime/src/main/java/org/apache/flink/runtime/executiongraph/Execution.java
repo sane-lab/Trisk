@@ -23,7 +23,6 @@ import org.apache.flink.api.common.Archiveable;
 import org.apache.flink.api.common.InputDependencyConstraint;
 import org.apache.flink.api.common.accumulators.Accumulator;
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.accumulators.StringifiedAccumulatorResult;
@@ -32,7 +31,6 @@ import org.apache.flink.runtime.checkpoint.CheckpointType;
 import org.apache.flink.runtime.checkpoint.JobManagerTaskRestore;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
-import org.apache.flink.runtime.clusterframework.types.SlotID;
 import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.concurrent.FutureUtils;
@@ -45,7 +43,6 @@ import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobmanager.scheduler.CoLocationConstraint;
 import org.apache.flink.runtime.jobmanager.scheduler.LocationPreferenceConstraint;
 import org.apache.flink.runtime.jobmanager.scheduler.NoResourceAvailableException;
@@ -53,7 +50,6 @@ import org.apache.flink.runtime.jobmanager.scheduler.ScheduledUnit;
 import org.apache.flink.runtime.jobmanager.scheduler.SlotSharingGroup;
 import org.apache.flink.runtime.jobmanager.slots.TaskManagerGateway;
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
-import org.apache.flink.runtime.jobmaster.SlotContext;
 import org.apache.flink.runtime.jobmaster.SlotRequestId;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.messages.TaskBackPressureResponse;
@@ -506,25 +502,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 			executionGraph.getSlotProviderStrategy(),
 			LocationPreferenceConstraint.ANY,
 			Collections.emptySet())
-			.thenCompose(slot -> registerProducedPartitions(slot.getTaskManagerLocation(), false));
-	}
-
-	public CompletableFuture<Execution> allocateAndAssignSlotForExecution(RescaleID rescaleId, SlotID slotId) {
-		final ExecutionGraph executionGraph = getVertex().getExecutionGraph();
-		getVertex().updateRescaleId(rescaleId);
-		return allocateAndAssignSlotForExecution(
-			executionGraph.getSlotProviderStrategy(),
-			LocationPreferenceConstraint.ANY,
-			Collections.emptySet(),
-			slotId)
-			.thenCompose(slot -> registerProducedPartitions(slot.getTaskManagerLocation(), false));
-	}
-
-	private CompletableFuture<LogicalSlot> allocateAndAssignSlotForExecution(
-		SlotProviderStrategy slotProviderStrategy,
-		LocationPreferenceConstraint locationPreferenceConstraint,
-		@Nonnull Set<AllocationID> allPreviousExecutionGraphAllocationIds) {
-		return allocateAndAssignSlotForExecution(slotProviderStrategy, locationPreferenceConstraint, allPreviousExecutionGraphAllocationIds, null);
+			.thenCompose(slot -> registerProducedPartitions(slot.getTaskManagerLocation()));
 	}
 
 	/**
@@ -540,8 +518,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	private CompletableFuture<LogicalSlot> allocateAndAssignSlotForExecution(
 			SlotProviderStrategy slotProviderStrategy,
 			LocationPreferenceConstraint locationPreferenceConstraint,
-			@Nonnull Set<AllocationID> allPreviousExecutionGraphAllocationIds,
-			SlotID slotId) {
+			@Nonnull Set<AllocationID> allPreviousExecutionGraphAllocationIds) {
 
 		checkNotNull(slotProviderStrategy);
 
@@ -589,8 +566,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 								getPhysicalSlotResourceProfile(vertex),
 								preferredLocations,
 								previousAllocationIDs,
-								allPreviousExecutionGraphAllocationIds),
-							slotId));
+								allPreviousExecutionGraphAllocationIds)));
 
 			// register call back to cancel slot request in case that the execution gets canceled
 			releaseFuture.whenComplete(
@@ -612,8 +588,6 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 					}
 
 					if (tryAssignResource(logicalSlot)) {
-						LOG.info("++++++ allocated slots: " +
-							new SlotID(logicalSlot.getTaskManagerLocation().getResourceID(), logicalSlot.getPhysicalSlotNumber()));
 						return logicalSlot;
 					} else {
 						// release the slot
@@ -725,7 +699,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	 *
 	 * @throws JobException if the execution cannot be deployed to the assigned resource
 	 */
-	public CompletableFuture<Acknowledge> deploy() throws JobException {
+	public void deploy() throws JobException {
 		assertRunningInJobMasterMainThread();
 
 		final LogicalSlot slot  = assignedResource;
@@ -764,7 +738,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 			// race double check, did we fail/cancel and do we need to release the slot?
 			if (this.state != DEPLOYING) {
 				slot.releaseSlot(new FlinkException("Actual state of execution " + this + " (" + state + ") does not match expected state DEPLOYING."));
-				return null;
+				return;
 			}
 
 			if (LOG.isInfoEnabled()) {
@@ -790,7 +764,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 
 			// We run the submission in the future executor so that the serialization of large TDDs does not block
 			// the main thread and sync back to the main thread once submission is completed.
-			return CompletableFuture.supplyAsync(() -> taskManagerGateway.submitTask(deployment, rpcTimeout), executor)
+			CompletableFuture.supplyAsync(() -> taskManagerGateway.submitTask(deployment, rpcTimeout), executor)
 				.thenCompose(Function.identity())
 				.whenCompleteAsync(
 					(ack, failure) -> {
@@ -817,8 +791,6 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 				ExceptionUtils.rethrow(t);
 			}
 		}
-
-		return null;
 	}
 
 	public void cancel() {
@@ -980,7 +952,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 		}
 	}
 
-	private static PartitionInfo  createPartitionInfo(ExecutionEdge executionEdge) {
+	private static PartitionInfo createPartitionInfo(ExecutionEdge executionEdge) {
 		IntermediateDataSetID intermediateDataSetID = executionEdge.getSource().getIntermediateResult().getId();
 		ShuffleDescriptor shuffleDescriptor = getConsumedPartitionShuffleDescriptor(executionEdge, false);
 		return new PartitionInfo(intermediateDataSetID, shuffleDescriptor);
@@ -997,170 +969,11 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 		processFail(t, false);
 	}
 
-	public void updateProducedPartitions(RescaleID rescaleId) {
-		// update produced partitions for sync.
-		getVertex().updateRescaleId(rescaleId);
-		for (Map.Entry<IntermediateResultPartitionID, ResultPartitionDeploymentDescriptor> entry : producedPartitions.entrySet()) {
-			IntermediateResultPartitionID key = entry.getKey();
-			ResultPartitionDeploymentDescriptor resultPartitionDeploymentDescriptor = entry.getValue();
-			// update shuffle descriptor
-			resultPartitionDeploymentDescriptor.getShuffleDescriptor()
-				.updateResultPartitionId(vertex.getRescaleId());
-			// update partition descriptor
-			IntermediateResultPartition intermediateResultPartition = vertex.getProducedPartitions().get(key);
-			resultPartitionDeploymentDescriptor.setNumberOfSubpartitions(intermediateResultPartition.getConsumers().get(0).size());
-		}
-	}
-
-	public CompletableFuture<Void> scheduleForInterTaskSync(int syncFlag) {
-
-		assertRunningInJobMasterMainThread();
-
-		final LogicalSlot slot = assignedResource;
-		checkNotNull(slot, "Try to rescale a vertex which isn't assigned slot.");
-
-		if(this.state != RUNNING && this.state != DEPLOYING) {
-			throw new IllegalStateException("The vertex must be in RUNNING or DEPLOYING state to be send sync request. Found state " + this.state);
-		}
-		try {
-			LOG.info(String.format("Update operator in this execution attempt: %s (attempt #%d) to %s",
-				vertex.getTaskNameWithSubtaskIndex(), attemptNumber, getAssignedResourceLocation()));
-
-			final TaskManagerGateway taskManagerGateway = slot.getTaskManagerGateway();
-
-			final ComponentMainThreadExecutor jobMasterMainThreadExecutor =
-				vertex.getExecutionGraph().getJobMasterMainThreadExecutor();
-
-			return CompletableFuture
-				.supplyAsync(() -> taskManagerGateway.scheduleSync(attemptId, syncFlag, rpcTimeout), executor)
-				.thenCompose(Function.identity())
-				.handleAsync((ack, failure) -> {
-					if (failure != null) {
-						LOG.error("++++++ scheduleOperatorUpdate err: ", failure);
-						throw new CompletionException(failure);
-					}
-					return null;
-				}, jobMasterMainThreadExecutor);
-		}
-		catch (Throwable t) {
-			markFailed(t);
-			if (isLegacyScheduling()) {
-				ExceptionUtils.rethrow(t);
-			}
-		}
-		return FutureUtils.completedVoidFuture();
-	}
-
-
-	public CompletableFuture<Void> scheduleOperatorUpdate(OperatorID operatorID) {
-
-		assertRunningInJobMasterMainThread();
-
-		final LogicalSlot slot = assignedResource;
-		checkNotNull(slot, "Try to rescale a vertex which isn't assigned slot.");
-
-		if(this.state != RUNNING) {
-			throw new IllegalStateException("The vertex must be in RUNNING state to be rescaled. Found state " + this.state);
-		}
-		try {
-			LOG.info(String.format("Update operator in this execution attempt: %s (attempt #%d) to %s",
-					vertex.getTaskNameWithSubtaskIndex(), attemptNumber, getAssignedResourceLocation()));
-
-			final TaskManagerGateway taskManagerGateway = slot.getTaskManagerGateway();
-
-			final ComponentMainThreadExecutor jobMasterMainThreadExecutor =
-				vertex.getExecutionGraph().getJobMasterMainThreadExecutor();
-
-			final Configuration updatedConfig = this.vertex.getJobVertex().getJobVertex().getConfiguration();
-
-			return CompletableFuture
-				.supplyAsync(() -> taskManagerGateway.updateOperator(attemptId, updatedConfig, operatorID, rpcTimeout), executor)
-				.thenCompose(Function.identity())
-				.handleAsync((ack, failure) -> {
-					if (failure != null) {
-						LOG.error("++++++ scheduleOperatorUpdate err: ", failure);
-						throw new CompletionException(failure);
-					}
-					return null;
-				}, jobMasterMainThreadExecutor);
-		}
-		catch (Throwable t) {
-			markFailed(t);
-			if (isLegacyScheduling()) {
-				ExceptionUtils.rethrow(t);
-			}
-		}
-		return FutureUtils.completedVoidFuture();
-	}
-
 	public CompletableFuture<Void> scheduleRescale(
 		RescaleID rescaleId,
 		RescaleOptions rescaleOptions,
 		@Nullable KeyGroupRange keyGroupRange) throws ExecutionGraphException {
-
-//		System.out.println(getVertex() + " : rescale id: " + getVertex().getRescaleId() + " , option: " + rescaleOptions);
-//		getVertex().updateRescaleId(rescaleId);
-//		System.out.println(getVertex() + " : updated rescale id: " + getVertex().getRescaleId());
-		vertex.assignKeyGroupRange(keyGroupRange);
-
-		assertRunningInJobMasterMainThread();
-
-		final LogicalSlot slot = assignedResource;
-		checkNotNull(slot, "Try to rescale a vertex which isn't assigned slot.");
-
-		if(this.state != RUNNING) {
-			throw new IllegalStateException("The vertex must be in RUNNING state to be rescaled. Found state " + this.state);
-		}
-
-		try {
-			if (LOG.isInfoEnabled()) {
-				LOG.info(String.format("ScheduleRescaling %s rescale option: %s", vertex.getTaskNameWithSubtaskIndex(), rescaleOptions));
-			}
-
-			if (rescaleOptions.isRepartition()) {
-				Preconditions.checkNotNull(taskRestore, "task restore should not be null");
-			}
-
-			// if it is not a repartition, do not need to apply taskRestore.
-			JobManagerTaskRestore sendTaskRestore = rescaleOptions.isRepartition() ? taskRestore : null;
-			final TaskDeploymentDescriptor deployment = TaskDeploymentDescriptorFactory
-				.fromExecutionVertex(vertex, attemptNumber)
-				.createDeploymentDescriptor(
-					slot.getAllocationId(),
-					slot.getPhysicalSlotNumber(),
-					sendTaskRestore,
-					producedPartitions.values());
-			// null taskRestore to let it be GC'ed
-			// only after repartition should the state being GC'ed
-			if (rescaleOptions.isRepartition()) {
-				taskRestore = null;
-			}
-
-			final TaskManagerGateway taskManagerGateway = slot.getTaskManagerGateway();
-
-			final ComponentMainThreadExecutor jobMasterMainThreadExecutor =
-				vertex.getExecutionGraph().getJobMasterMainThreadExecutor();
-
-			return CompletableFuture
-				.supplyAsync(() -> taskManagerGateway.rescaleTask(attemptId, deployment, rescaleOptions, rpcTimeout), executor)
-				.thenCompose(Function.identity())
-				.handleAsync((ack, failure) -> {
-					if (failure != null) {
-						LOG.error("++++++ scheduleRescale err: ", failure);
-						throw new CompletionException(failure);
-					}
-					return null;
-				}, jobMasterMainThreadExecutor);
-
-		}
-		catch (Throwable t) {
-			markFailed(t);
-
-			if (isLegacyScheduling()) {
-				ExceptionUtils.rethrow(t);
-			}
-		}
-		return null;
+		throw new IllegalArgumentException("scheduleRescale is not suppported now.");
 	}
 
 	public CompletableFuture<Void> scheduleRescale(
@@ -1175,12 +988,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	}
 
 	public CompletableFuture<Void> deploy(KeyGroupRange keyGroupRange, int idInModel) throws JobException {
-		getVertex().assignKeyGroupRange(keyGroupRange);
-		getVertex().setIdInModel(idInModel);
-
-		return this.deploy()
-			.handle((ack, failure) -> null);
-//		throw new IllegalArgumentException("deploy is not suppported now.");
+		throw new IllegalArgumentException("deploy is not suppported now.");
 	}
 
 	/**

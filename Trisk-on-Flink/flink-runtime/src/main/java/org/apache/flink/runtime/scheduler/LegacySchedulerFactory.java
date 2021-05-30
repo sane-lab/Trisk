@@ -83,7 +83,6 @@ public class LegacySchedulerFactory implements SchedulerNGFactory {
 			jobManagerJobMetricGroup,
 			slotRequestTimeout,
 			shuffleMaster,
-			partitionTracker
-		);
+			partitionTracker);
 	}
 }

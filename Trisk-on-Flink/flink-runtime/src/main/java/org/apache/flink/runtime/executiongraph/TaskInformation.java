@@ -50,8 +50,6 @@ public class TaskInformation implements Serializable {
 	/** Configuration for the task */
 	private final Configuration taskConfiguration;
 
-	private int idInModel = Integer.MAX_VALUE/2;
-
 	public TaskInformation(
 			JobVertexID jobVertexId,
 			String taskName,
@@ -89,13 +87,5 @@ public class TaskInformation implements Serializable {
 
 	public Configuration getTaskConfiguration() {
 		return taskConfiguration;
-	}
-
-	public void setIdInModel(int idInModel) {
-		this.idInModel = idInModel;
-	}
-
-	public int getIdInModel() {
-		return idInModel;
 	}
 }

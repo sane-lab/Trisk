@@ -21,7 +21,6 @@ package org.apache.flink.runtime.taskexecutor;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.blob.BlobCacheService;
 import org.apache.flink.runtime.blob.TransientBlobCache;
@@ -58,8 +57,6 @@ import org.apache.flink.runtime.io.network.partition.ResultPartitionConsumableNo
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.TaskExecutorPartitionInfo;
 import org.apache.flink.runtime.io.network.partition.TaskExecutorPartitionTracker;
-import org.apache.flink.runtime.jobgraph.OperatorID;
-import org.apache.flink.runtime.jobgraph.tasks.AbstractInvokable;
 import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotInfo;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
@@ -508,7 +505,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 			try {
 				jobInformation = tdd.getSerializedJobInformation().deserializeValue(getClass().getClassLoader());
 				taskInformation = tdd.getSerializedTaskInformation().deserializeValue(getClass().getClassLoader());
-				taskInformation.setIdInModel(tdd.getIdInModel());
 			} catch (IOException | ClassNotFoundException e) {
 				throw new TaskSubmissionException("Could not deserialize the job or task information.", e);
 			}
@@ -592,8 +588,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 				taskMetricGroup,
 				resultPartitionConsumableNotifier,
 				partitionStateChecker,
-				getRpcService().getExecutor(),
-				tdd.getKeyGroupRange());
+				getRpcService().getExecutor());
 
 			taskMetricGroup.gauge(MetricNames.IS_BACKPRESSURED, task::isBackPressured);
 
@@ -614,8 +609,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 					tdd.getJobId(),
 					tdd.getProducedPartitions(),
 					task.getTerminationFuture());
-
-				return task.getRunningFuture();
+				return CompletableFuture.completedFuture(Acknowledge.get());
 			} else {
 				final String message = "TaskManager already contains a task for id " +
 					task.getExecutionId() + '.';
@@ -649,7 +643,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 				final TaskInformation taskInformation;
 				try {
 					taskInformation = tdd.getSerializedTaskInformation().deserializeValue(getClass().getClassLoader());
-					taskInformation.setIdInModel(tdd.getIdInModel());
 				} catch (IOException | ClassNotFoundException e) {
 					throw new TaskException("Could not deserialize the job or task information.", e);
 				}
@@ -662,26 +655,18 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 					tdd.getProducedPartitions(),
 					tdd.getInputGates());
 
-				if(RescaleOptions.PREPARE_ONLY.equals(rescaleOptions)){
-					return CompletableFuture.completedFuture(Acknowledge.get());
-				}
-
 				if (rescaleOptions.isScalingPartitions()) {
 					task.createNewResultPartitions();
 				}
 
 				if (rescaleOptions.isRepartition()) {
 					log.info("++++++ update task state: " + tdd.getSubtaskIndex() + "  " + tdd.getExecutionAttemptId());
-					task.assignNewState(
-						tdd.getKeyGroupRange(),
-						tdd.getIdInModel(),
-						tdd.getTaskRestore());
-				} else if (rescaleOptions.isUpdateKeyGroupRange()) {
+					throw new IllegalArgumentException("update task state is not suppported now.");
+				}
+
+				if (rescaleOptions.isUpdateKeyGroupRange()) {
 					log.info("++++++ update task keyGroupRange for subtask: " + tdd.getSubtaskIndex() + "  " + tdd.getExecutionAttemptId());
-					task.updateKeyGroupRange(tdd.getKeyGroupRange());
-				} else {
-					// author: @hya
-					return task.finalizeRescaleAsync().thenApply(o -> Acknowledge.get());
+					throw new IllegalArgumentException("update keygroup range is not suppported now.");
 				}
 
 				return CompletableFuture.completedFuture(Acknowledge.get());
@@ -694,52 +679,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
 			log.debug(message);
 			return FutureUtils.completedExceptionally(new TaskException(message));
-		}
-	}
-
-	@Override
-	public CompletableFuture<Acknowledge> scheduleSync(
-		ExecutionAttemptID executionAttemptID,
-		int syncFlag,
-		@RpcTimeout Time timeout){
-		final Task task = taskSlotTable.getTask(executionAttemptID);
-		if (task != null) {
-			try {
-				// Run asynchronously because it might be blocking
-				task.prepareSync(syncFlag);
-
-				return CompletableFuture.completedFuture(Acknowledge.get());
-			} catch (Exception e) {
-				return FutureUtils.completedExceptionally(e);
-			}
-		} else {
-			log.debug("Discard update for input partitions of task {}. Task is no longer running.", executionAttemptID);
-			return CompletableFuture.completedFuture(Acknowledge.get());
-		}
-	}
-
-	@Override
-	public CompletableFuture<Acknowledge> updateOperator(
-		ExecutionAttemptID executionAttemptID,
-		Configuration updatedConfig,
-		OperatorID operatorID,
-		@RpcTimeout Time timeout){
-		final Task task = taskSlotTable.getTask(executionAttemptID);
-		if (task != null) {
-			try {
-				// Run asynchronously because it might be blocking
-				return task.updateOperatorConfig(updatedConfig, operatorID)
-					.whenComplete((l, e) -> {
-						if (e != null)
-							log.debug("Discard update for operator {} in {}", operatorID, executionAttemptID);
-					})
-					.thenApply(l -> Acknowledge.get());
-			} catch (Exception e) {
-				return FutureUtils.completedExceptionally(e);
-			}
-		} else {
-			log.debug("Discard update for input partitions of task {}. Task is no longer running.", executionAttemptID);
-			return CompletableFuture.completedFuture(Acknowledge.get());
 		}
 	}
 

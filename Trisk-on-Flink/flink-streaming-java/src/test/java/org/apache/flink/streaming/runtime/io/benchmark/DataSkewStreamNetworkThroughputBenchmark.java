@@ -21,7 +21,6 @@ package org.apache.flink.streaming.runtime.io.benchmark;
 import org.apache.flink.core.io.IOReadableWritable;
 import org.apache.flink.runtime.io.network.api.writer.ChannelSelector;
 import org.apache.flink.runtime.io.network.api.writer.RecordWriterBuilder;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 
@@ -61,11 +60,6 @@ public class DataSkewStreamNetworkThroughputBenchmark extends StreamNetworkThrou
 		@Override
 		public boolean isBroadcast() {
 			return false;
-		}
-
-		@Override
-		public void setMetricsManager(MetricsManager metricsManager) {
-
 		}
 	}
 }

@@ -19,7 +19,6 @@
 package org.apache.flink.runtime.executiongraph;
 
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.runtime.clusterframework.types.SlotID;
 import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.instance.SlotSharingGroupId;
 import org.apache.flink.runtime.jobgraph.ScheduleMode;
@@ -56,14 +55,6 @@ public abstract class SlotProviderStrategy {
 		SlotRequestId slotRequestId,
 		ScheduledUnit scheduledUnit,
 		SlotProfile slotProfile);
-
-	public CompletableFuture<LogicalSlot> allocateSlot(
-		SlotRequestId slotRequestId,
-		ScheduledUnit scheduledUnit,
-		SlotProfile slotProfile,
-		SlotID slotId) {
-		return CompletableFuture.completedFuture(null);
-	}
 
 	/**
 	 * Cancels the slot request with the given {@link SlotRequestId} and {@link SlotSharingGroupId}.
@@ -122,11 +113,6 @@ public abstract class SlotProviderStrategy {
 		@Override
 		public CompletableFuture<LogicalSlot> allocateSlot(SlotRequestId slotRequestId, ScheduledUnit scheduledUnit, SlotProfile slotProfile) {
 			return slotProvider.allocateSlot(slotRequestId, scheduledUnit, slotProfile, allocationTimeout);
-		}
-
-		@Override
-		public CompletableFuture<LogicalSlot> allocateSlot(SlotRequestId slotRequestId, ScheduledUnit scheduledUnit, SlotProfile slotProfile, SlotID slotId) {
-			return slotProvider.allocateSlot(slotRequestId, scheduledUnit, slotProfile, allocationTimeout, slotId);
 		}
 	}
 }

@@ -25,7 +25,6 @@ import org.apache.flink.runtime.executiongraph.IntermediateResultPartition;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
-import org.apache.flink.runtime.rescale.RescaleID;
 
 import java.io.Serializable;
 import java.util.List;
@@ -53,12 +52,10 @@ public class PartitionDescriptor implements Serializable {
 	private final ResultPartitionType partitionType;
 
 	/** The number of subpartitions. */
-	private int numberOfSubpartitions;
+	private final int numberOfSubpartitions;
 
 	/** Connection index to identify this partition of intermediate result. */
 	private final int connectionIndex;
-
-	private RescaleID rescaleId = RescaleID.DEFAULT;
 
 	@VisibleForTesting
 	public PartitionDescriptor(
@@ -102,18 +99,6 @@ public class PartitionDescriptor implements Serializable {
 		return connectionIndex;
 	}
 
-	void setRescaleId(RescaleID rescaleId) {
-		this.rescaleId = checkNotNull(rescaleId);
-	}
-
-	public void setNumberOfSubpartitions(int numberOfSubpartitions) {
-		this.numberOfSubpartitions = numberOfSubpartitions;
-	}
-
-	RescaleID getRescaleId() {
-		return rescaleId;
-	}
-
 	@Override
 	public String toString() {
 		return String.format(
@@ -142,14 +127,12 @@ public class PartitionDescriptor implements Serializable {
 			numberOfSubpartitions = consumers.get(0).size();
 		}
 		IntermediateResult result = partition.getIntermediateResult();
-		PartitionDescriptor partitionDescriptor = new PartitionDescriptor(
+		return new PartitionDescriptor(
 			result.getId(),
 			partition.getIntermediateResult().getNumberOfAssignedPartitions(),
 			partition.getPartitionId(),
 			result.getResultType(),
 			numberOfSubpartitions,
 			result.getConnectionIndex());
-		partitionDescriptor.setRescaleId(partition.getProducer().getRescaleId());
-		return partitionDescriptor;
 	}
 }

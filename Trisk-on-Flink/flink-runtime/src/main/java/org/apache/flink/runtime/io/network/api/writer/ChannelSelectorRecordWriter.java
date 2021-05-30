@@ -20,7 +20,6 @@ package org.apache.flink.runtime.io.network.api.writer;
 
 import org.apache.flink.core.io.IOReadableWritable;
 import org.apache.flink.runtime.io.network.buffer.BufferBuilder;
-import org.apache.flink.runtime.util.profiling.MetricsManager;
 
 import java.io.IOException;
 
@@ -136,10 +135,5 @@ public final class ChannelSelectorRecordWriter<T extends IOReadableWritable> ext
 		for (int index = 0; index < numberOfChannels; index++) {
 			closeBufferBuilder(index);
 		}
-	}
-
-	public void setMetricsManager(MetricsManager metricsManager) {
-		this.metricsManager = metricsManager;
-		this.channelSelector.setMetricsManager(metricsManager);
 	}
 }

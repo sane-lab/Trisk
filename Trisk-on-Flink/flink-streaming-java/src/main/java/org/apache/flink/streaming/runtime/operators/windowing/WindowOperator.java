@@ -66,7 +66,6 @@ import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
 import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.Window;
-import org.apache.flink.runtime.controlplane.abstraction.ControlAttribute;
 import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalWindowFunction;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.util.OutputTag;
@@ -108,12 +107,10 @@ public class WindowOperator<K, IN, ACC, OUT, W extends Window>
 	// Configuration values and user functions
 	// ------------------------------------------------------------------------
 
-	@ControlAttribute(name = "assigner")
 	protected final WindowAssigner<? super IN, W> windowAssigner;
 
 	private final KeySelector<IN, K> keySelector;
 
-	@ControlAttribute(name = "trigger")
 	private final Trigger<? super IN, ? super W> trigger;
 
 	private final StateDescriptor<? extends AppendingState<IN, ACC>, ?> windowStateDescriptor;

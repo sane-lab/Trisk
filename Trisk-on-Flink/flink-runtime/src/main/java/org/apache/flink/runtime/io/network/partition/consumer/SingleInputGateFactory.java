@@ -137,7 +137,7 @@ public class SingleInputGateFactory {
 		return inputGate;
 	}
 
-	public void createInputChannels(
+	private void createInputChannels(
 			String owningTaskName,
 			InputGateDeploymentDescriptor inputGateDeploymentDescriptor,
 			SingleInputGate inputGate,

@@ -68,7 +68,7 @@ public abstract class StateTable<K, N, S>
 	/**
 	 * The offset to the contiguous key groups.
 	 */
-	protected int keyGroupOffset;
+	protected final int keyGroupOffset;
 
 	/**
 	 * Map for holding the actual state objects. The outer array represents the key-groups.
@@ -97,10 +97,6 @@ public abstract class StateTable<K, N, S>
 		for (int i = 0; i < this.keyGroupedStateMaps.length; i++) {
 			this.keyGroupedStateMaps[i] = createStateMap();
 		}
-	}
-
-	public void updateKeyGroupOffset() {
-		this.keyGroupOffset = keyContext.getKeyGroupRange().getStartKeyGroup();
 	}
 
 	protected abstract StateMap<K, N, S> createStateMap();
@@ -295,13 +291,6 @@ public abstract class StateTable<K, N, S>
 	@VisibleForTesting
 	StateMap<K, N, S> getMapForKeyGroup(int keyGroupIndex) {
 		final int pos = indexToOffset(keyGroupIndex);
-
-//		System.out.println(keyGroupIndex
-//			+ " pos: " + pos
-//			+ " start: " + keyGroupOffset
-//			+ " kgr: " + keyContext.getKeyGroupRange()
-//			+ " remapping: " + keyContext.getKeyGroupRange().getFromAlignedToHashed());
-
 		if (pos >= 0 && pos < keyGroupedStateMaps.length) {
 			return keyGroupedStateMaps[pos];
 		} else {
@@ -313,7 +302,6 @@ public abstract class StateTable<K, N, S>
 	 * Translates a key-group id to the internal array offset.
 	 */
 	private int indexToOffset(int index) {
-		// remap the hashed index to aligned index.
 		return index - keyGroupOffset;
 	}
 

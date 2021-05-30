@@ -42,7 +42,7 @@ public interface StreamManagerRunner extends AutoCloseableAsync {
 	 *
 	 * @return Future with the JobMasterGateway once the underlying JobMaster becomes leader
 	 */
-	CompletableFuture<StreamManagerGateway> getStreamManagerGateway();
+	CompletableFuture<StreamManagerGateway> getJobMasterGateway();
 
 	/**
 	 * Get the job id of the executed job.

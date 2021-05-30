@@ -20,23 +20,16 @@ package org.apache.flink.streaming.runtime.tasks;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.runtime.checkpoint.CheckpointMetaData;
-import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.execution.CancelTaskException;
 import org.apache.flink.runtime.execution.Environment;
-import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
-import org.apache.flink.runtime.rescale.TaskRescaleManager;
-import org.apache.flink.runtime.rescale.reconfigure.TaskOperatorManager;
-import org.apache.flink.runtime.taskmanager.RuntimeEnvironment;
 import org.apache.flink.streaming.api.checkpoint.ExternallyInducedSource;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.api.operators.StreamSource;
-import org.apache.flink.streaming.runtime.io.RecordWriterOutput;
 import org.apache.flink.streaming.runtime.tasks.mailbox.MailboxDefaultAction;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
 
-import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
@@ -138,30 +131,6 @@ public class SourceStreamTask<OUT, SRC extends SourceFunction<OUT>, OP extends S
 				mailboxProcessor.allActionsCompleted();
 			}
 		});
-	}
-
-	protected void checkRescalePoint(
-		CheckpointMetaData checkpointMetaData,
-		CheckpointOptions checkpointOptions,
-		CheckpointMetrics checkpointMetrics) {
-
-		if (!checkpointOptions.getCheckpointType().isRescalepoint()) {
-			return;
-		}
-		// we could now pause the data passing process
-		TaskRescaleManager rescaleManager = ((RuntimeEnvironment) getEnvironment()).taskRescaleManager;
-		if (rescaleManager.isScalingTarget()) {
-			try {
-				// update output (writers)
-				rescaleManager.createNewResultPartitions();
-				replaceResultPartitions(rescaleManager);
-				System.out.println("pause the current data sending: " + this.getName());
-			} catch (IOException e) {
-				e.printStackTrace();
-			} finally {
-				rescaleManager.finish();
-			}
-		}
 	}
 
 	@Override

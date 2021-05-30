@@ -41,7 +41,6 @@ import org.apache.flink.runtime.jobmanager.scheduler.LocationPreferenceConstrain
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
 import org.apache.flink.runtime.rescale.RescaleID;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
-import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 import org.apache.flink.runtime.util.EvictingBoundedList;
 import org.apache.flink.util.ExceptionUtils;
@@ -83,8 +82,7 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 	private final ExecutionEdge[][] inputEdges;
 
-	private volatile int subTaskIndex;
-	private volatile int oldSubTaskIndex;
+	private final int subTaskIndex;
 
 	private final ExecutionVertexID executionVertexId;
 
@@ -103,8 +101,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	private final ArrayList<InputSplit> inputSplits;
 
 	private volatile RescaleID rescaleId;
-
-	private volatile KeyGroupRange keyGroupRange;
 
 	private volatile int idInModel;
 
@@ -153,7 +149,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 		this.jobVertex = jobVertex;
 		this.subTaskIndex = subTaskIndex;
-		this.oldSubTaskIndex = subTaskIndex;
 		this.executionVertexId = new ExecutionVertexID(jobVertex.getJobVertexId(), subTaskIndex);
 		this.taskNameWithSubtask = String.format("%s (%d/%d)",
 				jobVertex.getJobVertex().getName(), subTaskIndex + 1, jobVertex.getParallelism());
@@ -192,9 +187,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 		this.timeout = timeout;
 		this.inputSplits = new ArrayList<>();
-
-		this.rescaleId = RescaleID.DEFAULT;
-		this.idInModel = subTaskIndex;
 	}
 
 
@@ -236,23 +228,8 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 			jobVertex.getJobVertex().getName(), subTaskIndex + 1, jobVertex.getParallelism());
 	}
 
-	public void updateTaskIndex(int subTaskIndex) {
-		// save an old index for checkpoint and operator state operation
-		this.oldSubTaskIndex = this.subTaskIndex;
-		this.subTaskIndex = subTaskIndex;
-		this.executionVertexId.setSubtaskIndex(subTaskIndex);
-
-		for (IntermediateResultPartition irp : this.resultPartitions.values()) {
-			irp.updatePartitionNumber(subTaskIndex);
-		}
-	}
-
 	public int getTotalNumberOfParallelSubtasks() {
 		return this.jobVertex.getParallelism();
-	}
-
-	public int getOldTotalNumberOfParallelSubtasks() {
-		return this.jobVertex.getOldParallelism();
 	}
 
 	public int getMaxParallelism() {
@@ -266,14 +243,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	@Override
 	public int getParallelSubtaskIndex() {
 		return this.subTaskIndex;
-	}
-
-	public int getOldParallelSubtaskIndex() {
-		return this.oldSubTaskIndex;
-	}
-
-	public void syncOldParallelSubtaskIndex() {
-		this.oldSubTaskIndex = this.subTaskIndex;
 	}
 
 	public ExecutionVertexID getID() {
@@ -327,23 +296,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 	public void updateRescaleId(RescaleID rescaleId) {
 		this.rescaleId = rescaleId;
-	}
-
-	public void assignKeyGroupRange(KeyGroupRange keyGroupRange) {
-		this.keyGroupRange = keyGroupRange;
-	}
-
-	public KeyGroupRange getKeyGroupRange() {
-		return keyGroupRange;
-	}
-
-	public int getIdInModel() {
-		return idInModel;
-	}
-
-
-	public RescaleID getRescaleId() {
-		return rescaleId;
 	}
 
 	public void setIdInModel(int idInModel) {

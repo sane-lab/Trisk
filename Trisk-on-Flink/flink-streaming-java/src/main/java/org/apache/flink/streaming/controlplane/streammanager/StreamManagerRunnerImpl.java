@@ -24,14 +24,13 @@ import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.controlplane.streammanager.StreamManagerGateway;
 import org.apache.flink.runtime.controlplane.streammanager.StreamManagerId;
-import org.apache.flink.runtime.execution.librarycache.LibraryCacheManager;
-import org.apache.flink.runtime.jobmaster.JobNotFinishedException;
 import org.apache.flink.streaming.controlplane.streammanager.factories.StreamManagerServiceFactory;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.leaderelection.LeaderContender;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
+import org.apache.flink.runtime.leaderelection.StandaloneLeaderElectionService;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.util.ExceptionUtils;
@@ -40,7 +39,6 @@ import org.apache.flink.util.function.FunctionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -71,7 +69,8 @@ public class StreamManagerRunnerImpl implements LeaderContender, StreamManagerRu
 	/** Leader election for this stream manger. */
 	private final LeaderElectionService leaderElectionService;
 
-	private final LibraryCacheManager libraryCacheManager;
+// TODO: use LCM
+//	private final LibraryCacheManager libraryCacheManager;
 
 	private final Executor executor;
 
@@ -100,12 +99,11 @@ public class StreamManagerRunnerImpl implements LeaderContender, StreamManagerRu
 	 *                   required services could not be started, or the Job could not be initialized.
 	 */
 	public StreamManagerRunnerImpl(
-		final JobGraph jobGraph,
-		final StreamManagerServiceFactory streamManagerFactory,
-		final HighAvailabilityServices haServices,
-		final LibraryCacheManager libraryCacheManager,
-		final Executor executor,
-		final FatalErrorHandler fatalErrorHandler) throws Exception {
+			final JobGraph jobGraph,
+			final StreamManagerServiceFactory streamManagerFactory,
+			final HighAvailabilityServices haServices,
+			final Executor executor,
+			final FatalErrorHandler fatalErrorHandler) throws Exception {
 
 		this.resultFuture = new CompletableFuture<>();
 		this.terminationFuture = new CompletableFuture<>();
@@ -116,30 +114,20 @@ public class StreamManagerRunnerImpl implements LeaderContender, StreamManagerRu
 			this.jobGraph = checkNotNull(jobGraph);
 			this.executor = checkNotNull(executor);
 			this.fatalErrorHandler = checkNotNull(fatalErrorHandler);
-			this.libraryCacheManager = checkNotNull(libraryCacheManager);
 
 			checkArgument(jobGraph.getNumberOfVertices() > 0, "The given job is empty");
 
 			// libraries and class loader first
-			try {
-				libraryCacheManager.registerJob(
-					jobGraph.getJobID(), jobGraph.getUserJarBlobKeys(), jobGraph.getClasspaths());
-			} catch (IOException e) {
-				throw new Exception("Cannot set up the user code libraries: " + e.getMessage(), e);
-			}
-
-			final ClassLoader userCodeLoader = libraryCacheManager.getClassLoader(jobGraph.getJobID());
-			if (userCodeLoader == null) {
-				throw new Exception("The user code class loader could not be initialized.");
-			}
 
 			// high availability services next
-			this.leaderElectionService = haServices.getJobManagerLeaderElectionService(jobGraph.getJobID());
+			// TODO: 1. change back and 2. add getStreamManagerLES in HA
+//			this.leaderElectionService = haServices.getJobManagerLeaderElectionService(jobGraph.getJobID());
+			this.leaderElectionService = new StandaloneLeaderElectionService();
 
 			this.leaderGatewayFuture = new CompletableFuture<>();
 
 			// now start the StreamManager
-			this.streamManagerService = streamManagerFactory.createStreamManagerService(jobGraph, userCodeLoader);
+			this.streamManagerService = streamManagerFactory.createStreamManagerService(jobGraph);
 		}
 		catch (Throwable t) {
 			terminationFuture.completeExceptionally(t);
@@ -154,7 +142,7 @@ public class StreamManagerRunnerImpl implements LeaderContender, StreamManagerRu
 	//----------------------------------------------------------------------------------------------
 
 	@Override
-	public CompletableFuture<StreamManagerGateway> getStreamManagerGateway() {
+	public CompletableFuture<StreamManagerGateway> getJobMasterGateway() {
 		return leaderGatewayFuture;
 	}
 
@@ -182,34 +170,7 @@ public class StreamManagerRunnerImpl implements LeaderContender, StreamManagerRu
 		synchronized (lock) {
 			if (!shutdown) {
 				shutdown = true;
-
-				setNewLeaderGatewayFuture();
-				leaderGatewayFuture.completeExceptionally(new FlinkException("JobMaster has been shut down."));
-
-				final CompletableFuture<Void> jobManagerTerminationFuture = streamManagerService.closeAsync();
-
-				jobManagerTerminationFuture.whenComplete(
-					(Void ignored, Throwable throwable) -> {
-						try {
-							leaderElectionService.stop();
-						} catch (Throwable t) {
-							throwable = ExceptionUtils.firstOrSuppressed(t, ExceptionUtils.stripCompletionException(throwable));
-						}
-
-						libraryCacheManager.unregisterJob(jobGraph.getJobID());
-
-						if (throwable != null) {
-							terminationFuture.completeExceptionally(
-								new FlinkException("Could not properly shut down the JobManagerRunner", throwable));
-						} else {
-							terminationFuture.complete(null);
-						}
-					});
-
-				terminationFuture.whenComplete(
-					(Void ignored, Throwable throwable) -> {
-						resultFuture.completeExceptionally(new JobNotFinishedException(jobGraph.getJobID()));
-					});
+				// TODO
 			}
 
 			return terminationFuture;

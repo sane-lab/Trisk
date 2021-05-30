@@ -20,20 +20,17 @@ public class JobRescalePartitionAssignment {
 	private final JobRescalePartitionAssignment oldRescalePA;
 
 	// subtaskIndex -> partitions
-	private Map<Integer, List<Integer>> partitionAssignment;
+	private final Map<Integer, List<Integer>> partitionAssignment;
 
 	// subtaskIndex (in flink) -> idInModel (in streamswitch)
-	private Map<Integer, Integer> subtaskIndexMapping;
+	private final Map<Integer, Integer> subtaskIndexMapping;
 
 	// subtaskIndex (in flink) -> idInModel (in streamswitch, or said executorId)
 	private final Map<Integer, Integer> executorIdMapping;
 
 	private final List<KeyGroupRange> alignedKeyGroupRanges;
 
-	private Map<Integer, Boolean> modifiedSubtaskMap;
-
-	// this is used for remove the correponding subtask
-	private final Map<Integer, Boolean> removedSubtaskMap;
+	private final Map<Integer, Boolean> modifiedSubtaskMap;
 
 	public JobRescalePartitionAssignment(
 		Map<String, List<String>> strExecutorMapping,
@@ -55,7 +52,6 @@ public class JobRescalePartitionAssignment {
 		this.executorIdMapping = new HashMap<>();
 		this.alignedKeyGroupRanges = new ArrayList<>();
 		this.modifiedSubtaskMap = new HashMap<>();
-		this.removedSubtaskMap = new HashMap<>();
 
 		// here we copy and translate passed-in mapping
 		Map<Integer, List<Integer>> executorMapping = generateIntegerMap(strExecutorMapping);
@@ -93,7 +89,6 @@ public class JobRescalePartitionAssignment {
 		this.executorIdMapping = new HashMap<>();
 		this.alignedKeyGroupRanges = new ArrayList<>();
 		this.modifiedSubtaskMap = new HashMap<>();
-		this.removedSubtaskMap = new HashMap<>();
 
 		generateAlignedKeyGroupRanges();
 		generateExecutorIdMapping();
@@ -144,7 +139,6 @@ public class JobRescalePartitionAssignment {
 
 		int removedId = removedExecutorId.get(0);
 		modifiedSubtaskMap.put(oldRescalePA.getSubTaskId(removedId), true);
-		removedSubtaskMap.put(oldRescalePA.getSubTaskId(removedId), true);
 
 		List<Integer> modifiedIdList = executorMapping.keySet().stream()
 			.filter(id -> executorMapping.get(id).size() != oldExecutorMapping.get(id).size())
@@ -209,60 +203,35 @@ public class JobRescalePartitionAssignment {
 		checkState(absent1 == null, "should be one-to-one mapping");
 	}
 
-//	private void fillingUnused(int newParallelism) {
-//		int numOccupiedSubtask = 0;
-//		for (int subtaskIndex = 0; subtaskIndex < numOpenedSubtask; subtaskIndex++) {
-//			Integer absent = subtaskIndexMapping.putIfAbsent(subtaskIndex, UNUSED_SUBTASK);
-//			partitionAssignment.putIfAbsent(subtaskIndex, new ArrayList<>());
-//
-//			if (absent != null) {
-//				numOccupiedSubtask++;
-//			}
-//		}
-//
-//		checkState(numOccupiedSubtask == newParallelism);
-//	}
-
 	private void fillingUnused(int newParallelism) {
 		int numOccupiedSubtask = 0;
-		Map<Integer, Integer> newSubtaskIndexMapping = new HashMap<>();
-		Map<Integer, List<Integer>> newPartitionAssignment = new HashMap<>();
-		Map<Integer, Boolean> newModifiedSubtaskMap = new HashMap<>();
 		for (int subtaskIndex = 0; subtaskIndex < numOpenedSubtask; subtaskIndex++) {
 			Integer absent = subtaskIndexMapping.putIfAbsent(subtaskIndex, UNUSED_SUBTASK);
 			partitionAssignment.putIfAbsent(subtaskIndex, new ArrayList<>());
+
 			if (absent != null) {
-				newSubtaskIndexMapping.put(numOccupiedSubtask, subtaskIndexMapping.get(subtaskIndex));
-				newPartitionAssignment.put(numOccupiedSubtask, partitionAssignment.get(subtaskIndex));
-				if (modifiedSubtaskMap.containsKey(subtaskIndex)) {
-					newModifiedSubtaskMap.put(numOccupiedSubtask, true);
-				}
 				numOccupiedSubtask++;
 			}
 		}
 
 		checkState(numOccupiedSubtask == newParallelism);
-
-		subtaskIndexMapping = newSubtaskIndexMapping;
-		partitionAssignment = newPartitionAssignment;
-		modifiedSubtaskMap = newModifiedSubtaskMap;
 	}
 
 	private void generateAlignedKeyGroupRanges() {
-		int keyGroupStart = 0;
-		for (int subTaskIndex = 0; subTaskIndex < partitionAssignment.keySet().size(); subTaskIndex++) {
-			int rangeSize = partitionAssignment.get(subTaskIndex).size();
-
-			KeyGroupRange keyGroupRange = rangeSize == 0 ?
-				KeyGroupRange.EMPTY_KEY_GROUP_RANGE :
-				new KeyGroupRange(
-					keyGroupStart,
-					keyGroupStart + rangeSize - 1,
-					partitionAssignment.get(subTaskIndex));
-
-			alignedKeyGroupRanges.add(keyGroupRange);
-			keyGroupStart += rangeSize;
-		}
+//		int keyGroupStart = 0;
+//		for (int subTaskIndex = 0; subTaskIndex < partitionAssignment.keySet().size(); subTaskIndex++) {
+//			int rangeSize = partitionAssignment.get(subTaskIndex).size();
+//
+//			KeyGroupRange keyGroupRange = rangeSize == 0 ?
+//				KeyGroupRange.EMPTY_KEY_GROUP_RANGE :
+//				new KeyGroupRange(
+//					keyGroupStart,
+//					keyGroupStart + rangeSize - 1,
+//					partitionAssignment.get(subTaskIndex));
+//
+//			alignedKeyGroupRanges.add(keyGroupRange);
+//			keyGroupStart += rangeSize;
+//		}
 	}
 
 	private void generateExecutorIdMapping() {
@@ -300,15 +269,6 @@ public class JobRescalePartitionAssignment {
 	public boolean isSubtaskModified(int subtaskIndex) {
 		return modifiedSubtaskMap.getOrDefault(subtaskIndex, false);
 	}
-
-	public List<Integer> getRemovedSubtask() {
-		List<Integer> removedSubtask = new ArrayList<>();
-		for (Integer removedSubtaskId : removedSubtaskMap.keySet()) {
-			removedSubtask.add(removedSubtaskId);
-		}
-		return removedSubtask;
-	}
-
 
 	private static boolean checkPartitionAssignmentValidity(
 		Map<String, List<String>> partitionAssignment) {

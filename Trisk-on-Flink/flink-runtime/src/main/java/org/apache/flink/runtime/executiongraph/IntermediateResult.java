@@ -24,7 +24,6 @@ import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -107,32 +106,32 @@ public class IntermediateResult {
 		partitionsAssigned--;
 	}
 
-	public void updateNumParallelProducers(int numParallelProducers, List<Integer> removedTaskId) {
+	public void updateNumParallelProducers(int numParallelProducers) {
 		if (!resultType.isPipelined() || !resultType.isBounded()) {
 			throw new IllegalArgumentException("cannot adjust parallelism for non-streaming job");
 		}
 		if (numParallelProducers < this.numParallelProducers) {
 			this.numParallelProducers = numParallelProducers;
 			IntermediateResultPartition[] newPartitions = new IntermediateResultPartition[numParallelProducers];
-			int j = 0;
 			for (int i = 0; i < partitions.length; i++) {
-				if (!removedTaskId.contains(i)) {
-					newPartitions[j] = partitions[i];
-					j++;
+				if (numParallelProducers > i) {
+					newPartitions[i] = partitions[i];
 				} else {
 					// TODO: when decrease the numparallel, remember to remove ejv from executionGraph
 					dropPartition(partitions[i]);
 				}
 			}
 			partitions = newPartitions;
-		} else {
-			this.numParallelProducers = numParallelProducers;
-			IntermediateResultPartition[] newPartitions = new IntermediateResultPartition[numParallelProducers];
-			for (int i = 0; i < partitions.length; i++) {
-				newPartitions[i] = partitions[i];
-			}
-			partitions = newPartitions;
+			return;
+//			throw new IllegalArgumentException("scale down is not supported now");
 		}
+
+		this.numParallelProducers = numParallelProducers;
+		IntermediateResultPartition[] newPartitions = new IntermediateResultPartition[numParallelProducers];
+		for (int i = 0; i < partitions.length; i++) {
+			newPartitions[i] = partitions[i];
+		}
+		partitions = newPartitions;
 	}
 
 	public void resetConsumers() {

@@ -74,7 +74,6 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 	/** The logger for this class. */
 	private static final Logger LOG = LoggerFactory.getLogger(StreamTaskStateInitializerImpl.class);
 
-
 	/**
 	 * The environment of the task. This is required as parameter to construct state backends via their factory.
 	 */
@@ -99,14 +98,13 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 
 	@Override
 	public StreamOperatorStateContext streamOperatorStateContext(
-            @Nonnull OperatorID operatorID,
-            @Nonnull String operatorClassName,
-            @Nonnull ProcessingTimeService processingTimeService,
-			@Nullable KeyGroupRange assignedKeyGroupRange,
-			@Nonnull KeyContext keyContext,
-            @Nullable TypeSerializer<?> keySerializer,
-            @Nonnull CloseableRegistry streamTaskCloseableRegistry,
-            @Nonnull MetricGroup metricGroup) throws Exception {
+		@Nonnull OperatorID operatorID,
+		@Nonnull String operatorClassName,
+		@Nonnull ProcessingTimeService processingTimeService,
+		@Nonnull KeyContext keyContext,
+		@Nullable TypeSerializer<?> keySerializer,
+		@Nonnull CloseableRegistry streamTaskCloseableRegistry,
+		@Nonnull MetricGroup metricGroup) throws Exception {
 
 		TaskInfo taskInfo = environment.getTaskInfo();
 		OperatorSubtaskDescriptionText operatorSubtaskDescription =
@@ -131,7 +129,6 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 
 			// -------------- Keyed State Backend --------------
 			keyedStatedBackend = keyedStatedBackend(
-				assignedKeyGroupRange,
 				keySerializer,
 				operatorIdentifierText,
 				prioritizedOperatorSubtaskStates,
@@ -262,7 +259,6 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 	}
 
 	protected <K> AbstractKeyedStateBackend<K> keyedStatedBackend(
-		KeyGroupRange assignedKeyGroupRange,
 		TypeSerializer<K> keySerializer,
 		String operatorIdentifierText,
 		PrioritizedOperatorSubtaskState prioritizedOperatorSubtaskStates,
@@ -277,7 +273,6 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 
 		TaskInfo taskInfo = environment.getTaskInfo();
 
-		// TODO: put assigned keygrouprange to taskInfo.
 		final KeyGroupRange keyGroupRange = KeyGroupRangeAssignment.computeKeyGroupRangeForOperatorIndex(
 			taskInfo.getMaxNumberOfParallelSubtasks(),
 			taskInfo.getNumberOfParallelSubtasks(),
@@ -296,8 +291,7 @@ public class StreamTaskStateInitializerImpl implements StreamTaskStateInitialize
 					operatorIdentifierText,
 					keySerializer,
 					taskInfo.getMaxNumberOfParallelSubtasks(),
-					assignedKeyGroupRange,
-//					keyGroupRange,
+					keyGroupRange,
 					environment.getTaskKvStateRegistry(),
 					TtlTimeProvider.DEFAULT,
 					metricGroup,
