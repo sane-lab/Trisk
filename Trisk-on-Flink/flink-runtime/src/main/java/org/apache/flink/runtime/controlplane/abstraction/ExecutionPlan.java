@@ -33,7 +33,7 @@ public interface ExecutionPlan {
 	 * @param taskId     represent which task instance of this operator
 	 * @return
 	 */
-	TaskDescriptor getTask(Integer operatorID, int taskId);
+	TaskResourceDescriptor getTaskResource(Integer operatorID, int taskId);
 
 	/**
 	 * Return UserFunction, StreamOperator, or StreamOperatorFactory?
@@ -81,6 +81,14 @@ public interface ExecutionPlan {
 
 	OperatorDescriptor getOperatorByID(Integer operatorID);
 
+	Map<Integer, List<Integer>> getKeyStateDistribution(Integer operatorID);
+
+	Map<Integer, TaskResourceDescriptor> getResourceAllocation(Integer operatorID);
+
+	ClassLoader getFunctionClassLoader();
+
+
+
 	ExecutionPlan assignWorkload(Integer operatorID, Map<Integer, List<Integer>> distribution);
 
 	ExecutionPlan assignExecutionLogic(Integer operatorID, Object function);
@@ -100,4 +108,6 @@ public interface ExecutionPlan {
 	void setSlotMap(Map<String, List<AbstractSlot>> slotMap);
 
 	ExecutionPlan copy();
+
+	void setParallelism(int operatorID, int newParallelism);
 }

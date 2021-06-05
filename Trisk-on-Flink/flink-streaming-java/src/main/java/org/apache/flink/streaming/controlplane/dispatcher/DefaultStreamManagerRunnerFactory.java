@@ -19,6 +19,7 @@
 package org.apache.flink.streaming.controlplane.dispatcher;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
 import org.apache.flink.runtime.execution.librarycache.LibraryCacheManager;
 import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
@@ -52,6 +53,7 @@ public enum DefaultStreamManagerRunnerFactory implements StreamManagerRunnerFact
 		HighAvailabilityServices highAvailabilityServices,
 		LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
 		LibraryCacheManager libraryCacheManager,
+		BlobWriter blobWriter,
 		FatalErrorHandler fatalErrorHandler) throws Exception {
 
         final StreamManagerConfiguration streamManagerConfiguration = StreamManagerConfiguration.fromConfiguration(configuration);
@@ -61,6 +63,7 @@ public enum DefaultStreamManagerRunnerFactory implements StreamManagerRunnerFact
                 rpcService,
                 highAvailabilityServices,
 				libraryCacheManager,
+				blobWriter,
 				dispatcherGatewayRetriever,
                 fatalErrorHandler
         );

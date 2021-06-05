@@ -721,14 +721,31 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 	@Override
 	public CompletableFuture<Acknowledge> updateOperator(
 		ExecutionAttemptID executionAttemptID,
-		Configuration updatedConfig,
+		TaskDeploymentDescriptor tdd,
 		OperatorID operatorID,
 		@RpcTimeout Time timeout){
 		final Task task = taskSlotTable.getTask(executionAttemptID);
 		if (task != null) {
 			try {
+				try {
+					tdd.loadBigData(blobCacheService.getPermanentBlobService());
+				} catch (IOException | ClassNotFoundException e) {
+					throw new TaskException("Could not re-integrate offloaded TaskDeploymentDescriptor data.", e);
+				}
+
+				final TaskInformation taskInformation;
+				try {
+					taskInformation = tdd.getSerializedTaskInformation().deserializeValue(getClass().getClassLoader());
+					taskInformation.setIdInModel(tdd.getIdInModel());
+				} catch (IOException | ClassNotFoundException e) {
+					throw new TaskException("Could not deserialize the job or task information.", e);
+				}
+				task.updateTaskConfiguration(taskInformation);
+
+				JobInformation jobInformation = tdd.getSerializedJobInformation()
+					.deserializeValue(getClass().getClassLoader());
 				// Run asynchronously because it might be blocking
-				return task.updateOperatorConfig(updatedConfig, operatorID)
+				return task.updateOperatorConfig(jobInformation, operatorID)
 					.whenComplete((l, e) -> {
 						if (e != null)
 							log.debug("Discard update for operator {} in {}", operatorID, executionAttemptID);

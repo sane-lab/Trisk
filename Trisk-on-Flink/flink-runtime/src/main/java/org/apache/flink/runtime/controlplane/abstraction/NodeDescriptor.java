@@ -18,7 +18,7 @@ public class NodeDescriptor {
 	int numOfSlots;
 
 	// taskId = <Operator, taskIdx>
-	List<TaskDescriptor> deployedTasks;
+	List<TaskResourceDescriptor> deployedTasks;
 
 	public NodeDescriptor(InetAddress nodeAddress, int numOfSlots) {
 //			this.address = address;
@@ -36,7 +36,7 @@ public class NodeDescriptor {
 		return new NodeDescriptor(this.nodeAddress, this.numOfSlots);
 	}
 
-	void addContainedTask(TaskDescriptor task) {
+	void addContainedTask(TaskResourceDescriptor task) {
 		deployedTasks.add(task);
 	}
 }

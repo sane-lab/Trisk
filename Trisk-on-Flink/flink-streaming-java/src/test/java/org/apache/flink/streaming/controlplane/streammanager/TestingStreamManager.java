@@ -56,6 +56,8 @@ public class TestingStreamManager extends StreamManager {
 			highAvailabilityService,
 			jobLeaderIdService,
 			dispatcherGatewayRetriever,
+			null,
+			null,
 			fatalErrorHandler);
 		this.isRegisterJob = isRegisterJob;
 	}

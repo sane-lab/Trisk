@@ -23,6 +23,7 @@ import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.BlobServerOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.blob.BlobServer;
+import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.blob.VoidBlobStore;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
@@ -396,7 +397,9 @@ public class StreamManagerDispatcherTest extends TestLogger {
 			RpcService rpcService,
 			HighAvailabilityServices highAvailabilityServices,
 			LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
-			LibraryCacheManager libraryCacheManager, FatalErrorHandler fatalErrorHandler) throws Exception {
+			LibraryCacheManager libraryCacheManager,
+			BlobWriter blobWriter,
+			FatalErrorHandler fatalErrorHandler) throws Exception {
 
 			final StreamManagerConfiguration streamManagerConfiguration = StreamManagerConfiguration.fromConfiguration(configuration);
 
@@ -451,7 +454,9 @@ public class StreamManagerDispatcherTest extends TestLogger {
 			RpcService rpcService,
 			HighAvailabilityServices highAvailabilityServices,
 			LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
-			LibraryCacheManager libraryCacheManager, FatalErrorHandler fatalErrorHandler) {
+			LibraryCacheManager libraryCacheManager,
+			BlobWriter blobWriter,
+			FatalErrorHandler fatalErrorHandler) {
 
 			createdJobManagerRunnerLatch.countDown();
 
@@ -462,7 +467,9 @@ public class StreamManagerDispatcherTest extends TestLogger {
 					rpcService,
 					highAvailabilityServices,
 					dispatcherGatewayRetriever,
-					null, fatalErrorHandler);
+					null,
+					null,
+					fatalErrorHandler);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

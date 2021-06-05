@@ -28,6 +28,7 @@ import org.apache.flink.util.SerializedValue;
 import java.io.Serializable;
 import java.net.URL;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Container class for job information which is stored in the {@link ExecutionGraph}.
@@ -101,4 +102,18 @@ public class JobInformation implements Serializable {
 	public String toString() {
 		return "JobInformation for '" + jobName + "' (" + jobId + ')';
 	}
+
+	public void updateClasspath(List<PermanentBlobKey> userJarBlobKeys, List<URL> classpaths) {
+		for(PermanentBlobKey permanentBlobKey: userJarBlobKeys){
+			if(!requiredJarFileBlobKeys.contains(permanentBlobKey)){
+				requiredJarFileBlobKeys.add(permanentBlobKey);
+			}
+		}
+		for(URL url: classpaths){
+			if(!requiredClasspathURLs.contains(url)){
+				requiredClasspathURLs.add(url);
+			}
+		}
+	}
+
 }

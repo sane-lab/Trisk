@@ -84,8 +84,8 @@ public class RpcTaskManagerGateway implements TaskManagerGateway {
 	}
 
 	@Override
-	public CompletableFuture<Acknowledge> updateOperator(ExecutionAttemptID executionAttemptID, Configuration updatedConfig, OperatorID operatorID, Time timeout){
-		return taskExecutorGateway.updateOperator(executionAttemptID, updatedConfig, operatorID, timeout);
+	public CompletableFuture<Acknowledge> updateOperator(ExecutionAttemptID executionAttemptID, TaskDeploymentDescriptor tdd, OperatorID operatorID, Time timeout){
+		return taskExecutorGateway.updateOperator(executionAttemptID, tdd, operatorID, timeout);
 	}
 
 	@Override

@@ -19,6 +19,7 @@
 package org.apache.flink.streaming.controlplane.dispatcher;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.execution.librarycache.LibraryCacheManager;
 import org.apache.flink.streaming.controlplane.streammanager.StreamManagerRunner;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
@@ -43,5 +44,6 @@ public interface StreamManagerRunnerFactory {
 		HighAvailabilityServices highAvailabilityServices,
 		LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
 		LibraryCacheManager libraryCacheManager,
+		BlobWriter blobWriter,
 		FatalErrorHandler fatalErrorHandler) throws Exception;
 }

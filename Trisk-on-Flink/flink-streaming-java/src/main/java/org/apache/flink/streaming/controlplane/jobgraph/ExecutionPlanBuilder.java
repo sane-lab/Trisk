@@ -19,7 +19,7 @@ import org.apache.flink.streaming.api.graph.StreamEdge;
 import org.apache.flink.streaming.api.operators.SimpleUdfStreamOperatorFactory;
 import org.apache.flink.streaming.api.operators.StreamOperator;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
-import org.apache.flink.streaming.controlplane.streammanager.abstraction.ExecutionPlanImpl;
+import org.apache.flink.streaming.controlplane.streammanager.abstraction.TriskImpl;
 import org.apache.flink.streaming.runtime.partitioner.AssignedKeyGroupStreamPartitioner;
 import org.apache.flink.streaming.runtime.partitioner.KeyGroupStreamPartitioner;
 import org.apache.flink.streaming.runtime.partitioner.StreamPartitioner;
@@ -34,7 +34,7 @@ public class ExecutionPlanBuilder {
 	private final Map<Integer, OperatorDescriptor> operatorsMap = new LinkedHashMap<>();
 	private final OperatorDescriptor[] headOperators;
 	// operatorId -> task
-	private final Map<Integer, Map<Integer, TaskDescriptor>> operatorToTaskMap = new HashMap<>();
+	private final Map<Integer, Map<Integer, TaskResourceDescriptor>> operatorToTaskMap = new HashMap<>();
 	// node with resources
 	private final List<NodeDescriptor> resourceDistribution;
 
@@ -52,10 +52,10 @@ public class ExecutionPlanBuilder {
 	}
 
 
-	public ExecutionPlanImpl build() {
-//		return new ExecutionPlanImpl(operatorsMap, headOperators, operatorToTaskMap, resourceDistribution);
-//		return new ExecutionPlanImpl(operatorsMap, operatorToTaskMap, resourceDistribution);
-		return new ExecutionPlanImpl(operatorsMap, resourceDistribution);
+	public TriskImpl build() {
+//		return new TriskImpl(operatorsMap, headOperators, operatorToTaskMap, resourceDistribution);
+//		return new TriskImpl(operatorsMap, operatorToTaskMap, resourceDistribution);
+		return new TriskImpl(operatorsMap, resourceDistribution);
 	}
 
 	// DeployGraphState related
@@ -65,7 +65,7 @@ public class ExecutionPlanBuilder {
 		for (ExecutionJobVertex jobVertex : executionGraph.getAllVertices().values()) {
 			// contains all tasks of the same parallel operator instances
 //			List<Task> taskList = new ArrayList<>(jobVertex.getParallelism());
-			Map<Integer, TaskDescriptor> taskMap = new HashMap<>();
+			Map<Integer, TaskResourceDescriptor> taskMap = new HashMap<>();
 			for (ExecutionVertex vertex : jobVertex.getTaskVertices()) {
 				Execution execution;
 				do {
@@ -85,7 +85,7 @@ public class ExecutionPlanBuilder {
 				}
 				// todo how to get number of slots?
 				SlotID slotID = new SlotID(slot.getTaskManagerLocation().getResourceID(), slot.getPhysicalSlotNumber());
-				TaskDescriptor task = new TaskDescriptor(slotID.toString(), node);
+				TaskResourceDescriptor task = new TaskResourceDescriptor(slotID.toString(), node);
 				taskMap.put(vertex.getParallelSubtaskIndex(), task);
 			}
 			for (OperatorID operatorID : jobVertex.getOperatorIDs()) {

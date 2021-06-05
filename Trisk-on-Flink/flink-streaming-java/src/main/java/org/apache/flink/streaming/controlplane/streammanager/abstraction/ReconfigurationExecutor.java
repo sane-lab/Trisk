@@ -42,11 +42,11 @@ public interface ReconfigurationExecutor {
 	 *
 	 * @return the stream job state maintained in some place (e.g. {@link org.apache.flink.streaming.controlplane.streammanager.StreamManager})
 	 */
-	ExecutionPlan getExecutionPlan();
+	ExecutionPlan getTrisk();
 
-	ExecutionPlanWithLock getExecutionPlanCopy();
+	TriskWithLock getExecutionPlanCopy();
 
-	void execute(ControlPolicy controller, ExecutionPlanWithLock executionPlanCopy);
+	void execute(ControlPolicy controller, TriskWithLock executionPlanCopy);
 
 	@Internal
 	Configuration getExperimentConfig();
@@ -88,4 +88,6 @@ public interface ReconfigurationExecutor {
 		Function<PrimitiveOperation<Map<Integer, Map<Integer, AbstractCoordinator.Diff>>>, CompletableFuture<?>> operationCaller) {
 
 	}
+
+	Class<?> registerFunctionClass(String funcClassName, String sourceCode);
 }

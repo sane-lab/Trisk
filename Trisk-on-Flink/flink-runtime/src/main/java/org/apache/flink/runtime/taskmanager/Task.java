@@ -1309,13 +1309,31 @@ public class Task implements Runnable, TaskSlotPayload, TaskActions, PartitionPr
 		}
 	}
 
-	public CompletableFuture<Long> updateOperatorConfig(Configuration updatedConfig, OperatorID operatorID) throws Exception {
+	public CompletableFuture<Long> updateOperatorConfig(JobInformation jobInformation, OperatorID operatorID) throws Exception {
 		// since one java process share the same address space, so we only need to update configuration here,
 		// then all other task configuration referenced here will be updated
-		this.taskConfiguration.addAll(updatedConfig);
+		Collection<PermanentBlobKey> updatedRequiredJarFiles = jobInformation.getRequiredJarFileBlobKeys();
+		Collection<URL> updatedRequiredClasspaths = jobInformation.getRequiredClasspathURLs();
+		boolean modified = false;
+		for(PermanentBlobKey permanentBlobKey: updatedRequiredJarFiles){
+			if(!requiredJarFiles.contains(permanentBlobKey)){
+				requiredJarFiles.add(permanentBlobKey);
+				modified = true;
+			}
+		}
+		for(URL url: updatedRequiredClasspaths){
+			if(!requiredClasspaths.contains(url)){
+				requiredClasspaths.add(url);
+				modified = true;
+			}
+		}
+		System.out.println("is modified:" + modified);
+		if(modified){
+			libraryCache.updateClasspath(jobId, requiredJarFiles, requiredClasspaths);
+		}
 		return this.taskOperatorManager.getPauseActionController()
 			.getAckPausedFuture()
-			.thenCompose(ack -> checkNotNull(invokable).updateOperator(updatedConfig, operatorID));
+			.thenCompose(ack -> checkNotNull(invokable).updateOperator(taskConfiguration, operatorID));
 	}
 
 	// ------------------------------------------------------------------------

@@ -1071,10 +1071,15 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 			final ComponentMainThreadExecutor jobMasterMainThreadExecutor =
 				vertex.getExecutionGraph().getJobMasterMainThreadExecutor();
 
-			final Configuration updatedConfig = this.vertex.getJobVertex().getJobVertex().getConfiguration();
-
+			final TaskDeploymentDescriptor deployment = TaskDeploymentDescriptorFactory
+				.fromExecutionVertex(vertex, attemptNumber)
+				.createDeploymentDescriptor(
+					slot.getAllocationId(),
+					slot.getPhysicalSlotNumber(),
+					null,
+					producedPartitions.values());
 			return CompletableFuture
-				.supplyAsync(() -> taskManagerGateway.updateOperator(attemptId, updatedConfig, operatorID, rpcTimeout), executor)
+				.supplyAsync(() -> taskManagerGateway.updateOperator(attemptId, deployment, operatorID, rpcTimeout), executor)
 				.thenCompose(Function.identity())
 				.handleAsync((ack, failure) -> {
 					if (failure != null) {

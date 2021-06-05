@@ -38,6 +38,13 @@ public interface LibraryCacheManager {
 	 */
 	ClassLoader getClassLoader(JobID id);
 
+	default ClassLoader updateClasspath(
+		JobID id,
+		Collection<PermanentBlobKey> requiredJarFiles,
+		Collection<URL> requiredClasspaths) throws IOException {
+		throw new UnsupportedOperationException("not support classpath update");
+	}
+
 	/**
 	 * Registers a job with its required jar files and classpaths. The jar files are identified by
 	 * their blob keys and downloaded for use by a {@link ClassLoader}.

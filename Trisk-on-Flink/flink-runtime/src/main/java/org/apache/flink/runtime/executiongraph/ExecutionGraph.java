@@ -56,11 +56,7 @@ import org.apache.flink.runtime.executiongraph.restart.RestartCallback;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
-import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
-import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
-import org.apache.flink.runtime.jobgraph.JobVertex;
-import org.apache.flink.runtime.jobgraph.JobVertexID;
-import org.apache.flink.runtime.jobgraph.ScheduleMode;
+import org.apache.flink.runtime.jobgraph.*;
 import org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration;
 import org.apache.flink.runtime.jobmanager.scheduler.CoLocationGroup;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
@@ -170,7 +166,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	private final JobInformation jobInformation;
 
 	/** Serialized job information or a blob key pointing to the offloaded job information. */
-	private final Either<SerializedValue<JobInformation>, PermanentBlobKey> jobInformationOrBlobKey;
+	private Either<SerializedValue<JobInformation>, PermanentBlobKey> jobInformationOrBlobKey;
 
 	/** The executor which is used to execute futures. */
 	private final ScheduledExecutorService futureExecutor;
@@ -586,6 +582,16 @@ public class ExecutionGraph implements AccessExecutionGraph {
 
 	public Either<SerializedValue<JobInformation>, PermanentBlobKey> getJobInformationOrBlobKey() {
 		return jobInformationOrBlobKey;
+	}
+
+	public void updateClasspath(JobGraph jobGraph){
+		try {
+			checkState(jobGraph.getJobID()==getJobID(), "not the same job");
+			jobInformation.updateClasspath(jobGraph.getUserJarBlobKeys(), jobGraph.getClasspaths());
+			jobInformationOrBlobKey = BlobWriter.serializeAndTryOffload(jobInformation, jobInformation.getJobId(), blobWriter);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 
 	@Override

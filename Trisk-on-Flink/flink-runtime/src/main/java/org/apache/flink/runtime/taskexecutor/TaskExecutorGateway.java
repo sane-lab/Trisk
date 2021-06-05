@@ -113,7 +113,7 @@ public interface TaskExecutorGateway extends RpcGateway {
 	 */
 	CompletableFuture<Acknowledge> updateOperator(
 		ExecutionAttemptID executionAttemptID,
-		Configuration updatedConfig,
+		TaskDeploymentDescriptor tdd,
 		OperatorID operatorID,
 		@RpcTimeout Time timeout);
 

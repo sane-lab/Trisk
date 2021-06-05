@@ -123,6 +123,12 @@ public class JobManagerSharedServices {
 		backPressureSampleCoordinator.shutDown();
 		backPressureStatsTracker.shutDown();
 
+		synchronized (JobManagerSharedServices.class) {
+			if (sharedLibraryCacheManager == libraryCacheManager) {
+				sharedLibraryCacheManager = null;
+			}
+		}
+
 		if (firstException != null) {
 			ExceptionUtils.rethrowException(firstException, "Error while shutting down JobManager services");
 		}
@@ -149,6 +155,7 @@ public class JobManagerSharedServices {
 				blobServer,
 				FlinkUserCodeClassLoaders.ResolveOrder.fromString(classLoaderResolveOrder),
 				alwaysParentFirstLoaderPatterns);
+		sharedLibraryCacheManager = libraryCacheManager;
 
 		final Duration akkaTimeout;
 		try {
@@ -187,4 +194,54 @@ public class JobManagerSharedServices {
 			backPressureStatsTracker,
 			blobServer);
 	}
+
+	private static LibraryCacheManager sharedLibraryCacheManager;
+
+	public static JobManagerSharedServices fromConfigurationForStreamManager(
+		Configuration config,
+		BlobServer blobServer) throws Exception {
+
+		checkNotNull(config);
+		checkNotNull(blobServer);
+		checkNotNull(sharedLibraryCacheManager);
+
+		final Duration akkaTimeout;
+		try {
+			akkaTimeout = AkkaUtils.getTimeout(config);
+		} catch (NumberFormatException e) {
+			throw new IllegalConfigurationException(AkkaUtils.formatDurationParsingErrorMessage());
+		}
+
+		final ScheduledExecutorService futureExecutor = Executors.newScheduledThreadPool(
+			Hardware.getNumberCPUCores(),
+			new ExecutorThreadFactory("stream-manager-future"));
+
+		final int numSamples = config.getInteger(WebOptions.BACKPRESSURE_NUM_SAMPLES);
+		final long delayBetweenSamples = config.getInteger(WebOptions.BACKPRESSURE_DELAY);
+		final BackPressureRequestCoordinator coordinator = new BackPressureRequestCoordinator(
+			futureExecutor,
+			akkaTimeout.toMillis() + numSamples * delayBetweenSamples);
+
+		final int cleanUpInterval = config.getInteger(WebOptions.BACKPRESSURE_CLEANUP_INTERVAL);
+		final BackPressureStatsTrackerImpl backPressureStatsTracker = new BackPressureStatsTrackerImpl(
+			coordinator,
+			cleanUpInterval,
+			config.getInteger(WebOptions.BACKPRESSURE_REFRESH_INTERVAL));
+
+		futureExecutor.scheduleWithFixedDelay(
+			backPressureStatsTracker::cleanUpOperatorStatsCache,
+			cleanUpInterval,
+			cleanUpInterval,
+			TimeUnit.MILLISECONDS);
+
+		return new JobManagerSharedServices(
+			futureExecutor,
+			sharedLibraryCacheManager,
+			RestartStrategyFactory.createRestartStrategyFactory(config),
+			coordinator,
+			backPressureStatsTracker,
+			blobServer);
+	}
+
+
 }

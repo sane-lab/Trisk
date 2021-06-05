@@ -195,6 +195,7 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 //		}
 		CompletableFuture<Void> deployTaskFuture;
 		if(slotIds == null){
+			// allocate slot id that specified
 			deployTaskFuture = deployTasks(operatorID);
 		} else {
 			// the parallelism parameter is useless
@@ -338,6 +339,9 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 						checkpointCoordinator.startCheckpointScheduler();
 					}
 
+					// clear all created candidates
+					createdCandidates.get(operatorID).clear();
+
 					return FutureUtils.waitForAll(deployFutures);
 				});
 //			.thenCompose(executions -> {
@@ -410,6 +414,7 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 
 		final List<CompletableFuture<Void>> rescaleCandidatesFutures = new ArrayList<>();
 		try {
+			// update the result partition of upstream, and also the downstream input gates
 			for (OperatorDescriptor upstreamOperator : heldExecutionPlan.getOperatorByID(targetOperatorID).getParents()) {
 				// todo some partitions may not need modified, for example, broad cast partitioner
 				rescaleCandidatesFutures
@@ -427,9 +432,10 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 //							})
 				);
 				// check should we resume those tasks
-				Map<Integer, Diff> diffMap = diff.get(upstreamOperator.getOperatorID());
-				diffMap.remove(AbstractCoordinator.KEY_MAPPING);
-				if (diffMap.isEmpty() && syncOp != null) {
+				// if the diffMap of current operation is empty, we should resume the operator
+				Map<Integer, Diff> upstreamDiffMap = diff.get(upstreamOperator.getOperatorID());
+				upstreamDiffMap.remove(AbstractCoordinator.KEY_MAPPING);
+				if (upstreamDiffMap.isEmpty() && syncOp != null) {
 					syncOp.resumeTasks(Collections.singletonList(Tuple2.of(upstreamOperator.getOperatorID(), -1)));
 				}
 			}
@@ -452,19 +458,29 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 					vertex.assignKeyGroupRange(remappingAssignment.getAlignedKeyGroupRange(subtaskIndex));
 				}
 			}
-			// TODO: before resume those tasks, should check whether the update on the task has been completed, using diffmap
-			// TODO: but diffmap is operator-centric, and is unable to check whether the task should be resumed.
-			if (remappingAssignment.isScaling()) {
-				try { // update partition and downstream gates if there are tasks to be scaled out/in
-					updatePartitions(targetOperatorID, rescaleID)
-						// downstream gates need to find out the upstream partitions, do not update downstream gates before upstream has updated
+
+			// Before resume those tasks, should check whether the update on the task has been completed, using diffmap
+			// But diffmap is operator-centric, and is unable to check whether the task should be resumed.
+			// To solve this problem, we check the remapping assignment of the operator, which stores which task is modified
+			// The unmodified tasks can be resumed when the diffMap have only the remapping assignment and no other configs to update.
+			// TODO: if there are multiple operations on a task, we update configs one by one
+			//  it is possible that each operation happend concurrently
+			//  but this can be resolved by calling resume for all blocked tasks again after all update completed
+			Map<Integer, Diff> diffMap = diff.get(targetOperatorID);
+			if (diffMap.containsKey(AbstractCoordinator.KEY_MAPPING)
+				|| diffMap.containsKey(AbstractCoordinator.UDF)) {
+				if (remappingAssignment.isScaling()) {
+					try { // update partition and downstream gates if there are tasks to be scaled out/in
+						updatePartitions(targetOperatorID, rescaleID)
+							// downstream gates need to find out the upstream partitions, do not update downstream gates before upstream has updated
 //						.thenCompose(o -> updateDownstreamGates(targetOperatorID))
-						.thenAccept(o -> syncOp.resumeTasks(notModifiedList));
-				} catch (ExecutionGraphException e) {
-					e.printStackTrace();
+							.thenAccept(o -> syncOp.resumeTasks(notModifiedList));
+					} catch (ExecutionGraphException e) {
+						e.printStackTrace();
+					}
+				} else {
+					syncOp.resumeTasks(notModifiedList);
 				}
-			} else {
-				syncOp.resumeTasks(notModifiedList);
 			}
 
 			CompletableFuture<Void> finishFuture = FutureUtils.completeAll(rescaleCandidatesFutures);
@@ -787,6 +803,8 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 
 		ExecutionJobVertex executionJobVertex = executionGraph.getJobVertex(jobVertexID);
 		Preconditions.checkNotNull(executionJobVertex, "Execution job vertex not found: " + jobVertexID);
+		executionGraph.updateClasspath(jobGraph);
+		executionJobVertex.cleanBeforeRescale();
 
 		final List<CompletableFuture<?>> resultFutures =
 			Arrays.stream(executionJobVertex.getTaskVertices())
@@ -836,6 +854,8 @@ public class ReconfigurationCoordinator extends AbstractCoordinator {
 
 		ExecutionJobVertex executionJobVertex = executionGraph.getJobVertex(jobVertexID);
 		Preconditions.checkNotNull(executionJobVertex, "Execution job vertex not found: " + jobVertexID);
+		executionGraph.updateClasspath(jobGraph);
+		executionJobVertex.cleanBeforeRescale();
 
 		final List<CompletableFuture<?>> resultFutures =
 			Arrays.stream(executionJobVertex.getTaskVertices())

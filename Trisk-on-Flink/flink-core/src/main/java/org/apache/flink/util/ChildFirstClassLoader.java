@@ -47,6 +47,11 @@ public final class ChildFirstClassLoader extends URLClassLoader {
 	}
 
 	@Override
+	public void addURL(URL url){
+		super.addURL(url);
+	}
+
+	@Override
 	protected synchronized Class<?> loadClass(
 		String name, boolean resolve) throws ClassNotFoundException {
 

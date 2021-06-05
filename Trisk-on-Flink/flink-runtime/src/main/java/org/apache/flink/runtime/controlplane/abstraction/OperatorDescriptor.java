@@ -27,7 +27,7 @@ public class OperatorDescriptor {
 	private final TaskConfigurations taskConfigurations;
 	private boolean stateful = false;
 
-	public OperatorDescriptor(int operatorID, String name, int parallelism, Map<Integer, TaskDescriptor> tasks) {
+	public OperatorDescriptor(int operatorID, String name, int parallelism, Map<Integer, TaskResourceDescriptor> tasks) {
 		this.operatorID = operatorID;
 		this.name = name;
 		this.taskConfigurations = new TaskConfigurations(parallelism, tasks);
@@ -71,7 +71,7 @@ public class OperatorDescriptor {
 
 
 	public Map<Integer, List<Integer>> getKeyStateDistribution() {
-		return taskConfigurations.keyStateAllocation;
+		return taskConfigurations.keyStateDistribution;
 	}
 
 	public Map<Integer, Map<Integer, List<Integer>>> getKeyMapping() {
@@ -94,11 +94,11 @@ public class OperatorDescriptor {
 		return Collections.unmodifiableMap(taskConfigurations.executionLogic.attributeMap);
 	}
 
-	public TaskDescriptor getTask(int taskId) {
+	public TaskResourceDescriptor getTaskResource(int taskId) {
 		return taskConfigurations.tasks.get(taskId);
 	}
 
-	public Map<Integer, TaskDescriptor> getTasks() {
+	public Map<Integer, TaskResourceDescriptor> getTasksResource() {
 		return taskConfigurations.tasks;
 	}
 
@@ -110,7 +110,7 @@ public class OperatorDescriptor {
 			parent.taskConfigurations.keyMapping.put(operatorID, keyStateAllocation);
 		}
 		// stateless operator should not be allocated  key set
-		stateful = !taskConfigurations.keyStateAllocation.isEmpty();
+		stateful = !taskConfigurations.keyStateDistribution.isEmpty();
 	}
 
 	private void addAll(Map<Integer, List<Integer>> keyStateAllocation) {
@@ -119,7 +119,7 @@ public class OperatorDescriptor {
 		for (int taskId : keyStateAllocation.keySet()) {
 			unmodifiable.put(taskId, Collections.unmodifiableList(keyStateAllocation.get(taskId)));
 		}
-		taskConfigurations.keyStateAllocation = Collections.unmodifiableMap(unmodifiable);
+		taskConfigurations.keyStateDistribution = Collections.unmodifiableMap(unmodifiable);
 	}
 
 	@Internal
@@ -270,15 +270,15 @@ public class OperatorDescriptor {
 		/* for stateful one input stream task, the key state allocation item is always one */
 
 		// taskId -> keyset
-		public Map<Integer, List<Integer>> keyStateAllocation;
+		public Map<Integer, List<Integer>> keyStateDistribution;
 		// task id -> key mapping
 		public Map<Integer, Map<Integer, List<Integer>>> keyMapping;
 		// task id -> task(slots, location)
-		public Map<Integer, TaskDescriptor> tasks;
+		public Map<Integer, TaskResourceDescriptor> tasks;
 
-		TaskConfigurations(int parallelism, Map<Integer, TaskDescriptor> tasks) {
+		TaskConfigurations(int parallelism, Map<Integer, TaskResourceDescriptor> tasks) {
 			this.parallelism = parallelism;
-			keyStateAllocation = new HashMap<>();
+			keyStateDistribution = new HashMap<>();
 			keyMapping = new HashMap<>();
 			executionLogic = new ExecutionLogic();
 			this.tasks = tasks;
@@ -286,29 +286,29 @@ public class OperatorDescriptor {
 
 		TaskConfigurations(int parallelism,
 						   ExecutionLogic executionLogic,
-						   Map<Integer, List<Integer>> keyStateAllocation,
+						   Map<Integer, List<Integer>> keyStateDistribution,
 						   Map<Integer, Map<Integer, List<Integer>>> keyMapping,
-						   Map<Integer, TaskDescriptor> tasks) {
+						   Map<Integer, TaskResourceDescriptor> tasks) {
 			this.parallelism = parallelism;
 			this.executionLogic = executionLogic;
-			this.keyStateAllocation = keyStateAllocation;
+			this.keyStateDistribution = keyStateDistribution;
 			this.keyMapping = keyMapping;
 			this.tasks = tasks;
 		}
 
 		public TaskConfigurations copy(List<NodeDescriptor> resourceDistributionCopy) {
 			ExecutionLogic executionLogicCopy = executionLogic.copy();
-			Map<Integer, TaskDescriptor> tasksCopy = new HashMap<>();
+			Map<Integer, TaskResourceDescriptor> tasksCopy = new HashMap<>();
 			for (Integer taskId : tasks.keySet()) {
 				for (NodeDescriptor nodeCopy : resourceDistributionCopy) {
 					if (tasks.get(taskId).location.nodeAddress.equals(nodeCopy.nodeAddress)) {
-						TaskDescriptor taskCopy = tasks.get(taskId).copy(nodeCopy);
+						TaskResourceDescriptor taskCopy = tasks.get(taskId).copy(nodeCopy);
 						tasksCopy.put(taskId, taskCopy);
 					}
 				}
 			}
 			Map<Integer, List<Integer>> keyStateAllocationCopy = new HashMap<>();
-			copyKeySet(keyStateAllocation, keyStateAllocationCopy);
+			copyKeySet(keyStateDistribution, keyStateAllocationCopy);
 			Map<Integer, Map<Integer, List<Integer>>> keyMappingCopy = new HashMap<>();
 			for (Integer operatorID : keyMapping.keySet()) {
 				Map<Integer, List<Integer>> keySetCopy = new HashMap<>();

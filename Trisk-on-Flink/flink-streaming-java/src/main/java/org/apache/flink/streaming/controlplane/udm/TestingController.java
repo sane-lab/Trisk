@@ -46,7 +46,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void showOperatorInfo() {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 		for (Iterator<OperatorDescriptor> it = streamJobState.getAllOperator(); it.hasNext(); ) {
 			OperatorDescriptor descriptor = it.next();
 			System.out.println(descriptor);
@@ -57,7 +57,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testRebalanceStateful(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 		Map<Integer, List<Integer>> curKeyStateAllocation = streamJobState.getKeyStateAllocation(testingOpID);
 		// we assume that each operator only have one input now
 
@@ -77,7 +77,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testRebalanceStateful2(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 		Map<Integer, List<Integer>> curKeyStateAllocation = streamJobState.getKeyStateAllocation(testingOpID);
 		// we assume that each operator only have one input now
 
@@ -97,7 +97,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testScaleOutStateful(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
 		System.out.println(oldParallelism);
@@ -127,7 +127,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testScaleOutStateful2(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
 		System.out.println(oldParallelism);
@@ -163,7 +163,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testScaleInStateful(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
 		System.out.println(oldParallelism);
@@ -190,7 +190,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testScaleInStateful2(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
 		System.out.println(oldParallelism);
@@ -219,7 +219,7 @@ public class TestingController extends AbstractController {
 	}
 
 	private void testScaling(int testingOpID, int newParallelism) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		Map<Integer, List<Integer>> curKeyStateAllocation = streamJobState.getKeyStateAllocation(testingOpID);
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
@@ -256,7 +256,7 @@ public class TestingController extends AbstractController {
 
 	// WARNING: This only works without rebalance of the stateless operator
 	private void testScaleOut2(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);
 		System.out.println(oldParallelism);
@@ -292,7 +292,7 @@ public class TestingController extends AbstractController {
 
 	@Deprecated
 	private void testRebalanceStateless(int testingOpID) throws InterruptedException {
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 		Set<OperatorDescriptor> parents = streamJobState.getOperatorByID(testingOpID).getParents();
 		// we assume that each operator only have one input now
 		for (OperatorDescriptor parent : parents) {
@@ -351,7 +351,7 @@ public class TestingController extends AbstractController {
 		//	 an example shows how to defined customize operations
 		int windowOpID = findOperatorByName("counting window reduce");
 		if (windowOpID != -1) {
-			OperatorDescriptor descriptor = getReconfigurationExecutor().getExecutionPlan().getOperatorByID(windowOpID);
+			OperatorDescriptor descriptor = getReconfigurationExecutor().getTrisk().getOperatorByID(windowOpID);
 			Map<String, Object> attributeMap = descriptor.getControlAttributeMap();
 			PurgingTrigger<?, ?> trigger = (PurgingTrigger<?, ?>) attributeMap.get("trigger");
 			long oldWindowSize = ((CountTrigger<?>) trigger.getNestedTrigger()).getMaxCount();
@@ -368,11 +368,11 @@ public class TestingController extends AbstractController {
 	private void updateCountingWindowSize(int rawVertexID, long newWindowSize) throws Exception {
 		// update abstraction in stream manager execution plan
 		CountTrigger<?> trigger = CountTrigger.of(newWindowSize);
-		OperatorDescriptor descriptor = getReconfigurationExecutor().getExecutionPlan().getOperatorByID(rawVertexID);
+		OperatorDescriptor descriptor = getReconfigurationExecutor().getTrisk().getOperatorByID(rawVertexID);
 		descriptor.setControlAttribute("trigger", PurgingTrigger.of(trigger));
 		getReconfigurationExecutor().callCustomizeOperations(
 			enforcement -> FutureUtils.completedVoidFuture()
-				.thenCompose(o -> enforcement.prepareExecutionPlan(getReconfigurationExecutor().getExecutionPlan()))
+				.thenCompose(o -> enforcement.prepareExecutionPlan(getReconfigurationExecutor().getTrisk()))
 				.thenCompose(o -> enforcement.synchronizeTasks(Collections.singletonList(Tuple2.of(rawVertexID, -1)), o))
 				.thenCompose(o -> enforcement.updateFunction(rawVertexID, o))
 				.whenComplete((o, failure) -> {
@@ -392,7 +392,7 @@ public class TestingController extends AbstractController {
 
 	private void testScaleOutWindowJoin() throws InterruptedException {
 
-		ExecutionPlan streamJobState = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan streamJobState = getReconfigurationExecutor().getTrisk();
 		int testingOpID = findOperatorByName("join1");
 
 		int oldParallelism = streamJobState.getParallelism(testingOpID);

@@ -18,6 +18,7 @@
 
 package org.apache.flink.streaming.controlplane.streammanager.factories;
 
+import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
 import org.apache.flink.runtime.execution.librarycache.LibraryCacheManager;
@@ -43,9 +44,11 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 
 	private final HighAvailabilityServices haServices;
 
-//	private final JobManagerSharedServices jobManagerSharedServices;
-	// TODO: May need StreamManagerSharedServices
+	private final LibraryCacheManager libraryCacheManager;
 
+	//	private final JobManagerSharedServices jobManagerSharedServices;
+	// TODO: May need StreamManagerSharedServices
+	private final BlobWriter blobWriter;
 
 	private final LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever;
 
@@ -56,6 +59,7 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 		RpcService rpcService,
 		HighAvailabilityServices haServices,
 		LibraryCacheManager libraryCacheManager,
+		BlobWriter blobWriter,
 		LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever,
 		FatalErrorHandler fatalErrorHandler) {
 		this.streamManagerConfiguration = streamManagerConfiguration;
@@ -63,6 +67,8 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 		this.haServices = haServices;
 		this.dispatcherGatewayRetriever = dispatcherGatewayRetriever;
 		this.fatalErrorHandler = fatalErrorHandler;
+		this.libraryCacheManager = libraryCacheManager;
+		this.blobWriter = blobWriter;
 	}
 
 	@Override
@@ -82,6 +88,8 @@ public class DefaultStreamManagerServiceFactory implements StreamManagerServiceF
 			haServices,
 			streamManagerRuntimeServices.getJobLeaderIdService(),
 			dispatcherGatewayRetriever,
+			libraryCacheManager,
+			blobWriter,
 			fatalErrorHandler);
 	}
 }

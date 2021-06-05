@@ -19,29 +19,26 @@
 package org.apache.flink.streaming.controlplane.streammanager;
 
 import org.apache.flink.streaming.controlplane.udm.AbstractController;
-import org.apache.flink.util.FileUtils;
 
-import javax.tools.JavaCompiler;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
+import javax.annotation.Nullable;
+import javax.tools.*;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.StringWriter;
 import java.net.URI;
-import java.nio.file.Paths;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 
 //Define Custom ClassLoader
 public class ByteClassLoader extends ClassLoader {
 
-	private static ByteClassLoader byteClassLoader = new ByteClassLoader(ByteClassLoader.class.getClassLoader());
-
-
 	private final HashMap<String, byte[]> byteDataMap = new HashMap<>();
 
-	public ByteClassLoader(ClassLoader parent) {
+	private ByteClassLoader(ClassLoader parent) {
 		super(parent);
 	}
 
@@ -85,32 +82,49 @@ public class ByteClassLoader extends ClassLoader {
 		return defineClass(className, extractedBytes, 0, extractedBytes.length);
 	}
 
-	public static Class<? extends AbstractController> loadClassFromByteArray(byte[] byteData, String className)
+	public Class<? extends AbstractController> loadClassFromByteArray(byte[] byteData, String className)
 		throws ClassNotFoundException {
 		//Load bytes into hashmap
-		if (!byteClassLoader.loadDataInBytes(byteData, className)) {
+		if (!loadDataInBytes(byteData, className)) {
 			throw new ClassNotFoundException("duplicate class definition for class:" + className);
 		}
-		return (Class<? extends AbstractController>) byteClassLoader.loadClass(className, false);
+		return (Class<? extends AbstractController>) loadClass(className, false);
 	}
 
-	public static byte[] compileJavaClass(String className, String sourceCode) throws IOException {
+	public static ByteClassLoader create(){
+		return new ByteClassLoader(ByteClassLoader.class.getClassLoader());
+	}
+
+	public static byte[] createJar(String className, byte[] classMetaData) {
+		ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		try (JarOutputStream tempJar = new JarOutputStream(bos)){
+			JarEntry entry = new JarEntry(className);
+			tempJar.putNextEntry(entry);
+			// write classMetaDate to the jar.
+			tempJar.write(classMetaData, 0, classMetaData.length);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return bos.toByteArray();
+	}
+
+	public static byte[] compileJavaClass(String className, String sourceCode, @Nullable Iterable<String> options) throws IOException {
+		JavaFileObject targetSource = new JavaSourceFromString(className, sourceCode);
+		ByteArrayJavaFileObject targetClass = new ByteArrayJavaFileObject(className);
+		Iterable<? extends JavaFileObject> compilationUnits = Collections.singletonList(targetSource);
 
 		JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-		List<JavaSourceFromString> unitsToCompile = new ArrayList<JavaSourceFromString>() {{
-			add(new ByteClassLoader.JavaSourceFromString(className, sourceCode));
-		}};
-
-		StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
-		compiler.getTask(null, fileManager, null, null, null, unitsToCompile)
-			.call();
+		ByteArrayFileManager fileManager = new ByteArrayFileManager(
+			compiler.getStandardFileManager(null, null, null), targetClass);
+		StringWriter sw = new StringWriter();
+		JavaCompiler.CompilationTask task = compiler.getTask(sw, fileManager,
+			null, options, null, compilationUnits);
+		if (!task.call()) {
+			fileManager.close();
+			throw new IOException("compile with error:"+sw.toString());
+		}
 		fileManager.close();
-
-		// My question is: is it possible to compile straight to a byte[] array, and avoid the messiness of dealing with File I/O altogether?
-		// see https://stackoverflow.com/questions/2130039/javacompiler-from-jdk-1-6-how-to-write-class-bytes-directly-to-byte-array
-		String[] classPathName = className.split("\\.");
-		String simpleClassFileName = classPathName[classPathName.length - 1] + ".class";
-		return FileUtils.readAllBytes(Paths.get(simpleClassFileName));
+		return targetClass.toByteArray();
 	}
 
 	/**
@@ -137,6 +151,38 @@ public class ByteClassLoader extends ClassLoader {
 		@Override
 		public CharSequence getCharContent(boolean ignoreEncodingErrors) {
 			return code;
+		}
+	}
+
+	// wrapper class - not really a 'FileObject', uses in-memory ByteArrayOutputStream 'bos'
+	private static class ByteArrayJavaFileObject extends SimpleJavaFileObject {
+		ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		public ByteArrayJavaFileObject(String name) {
+			// URI trick from SimpleJavaFileObject constructor - it only recognizes
+			// ('file:' or 'jar:'); anything else forces the 'openOutputStream' callback for Kind.CLASS
+			super(URI.create("string:///" + name.replace('.', '/') + Kind.CLASS.extension),
+				Kind.CLASS);
+		}
+		public byte[] toByteArray() {
+			return bos.toByteArray();
+		}
+		@Override
+		public OutputStream openOutputStream() throws IOException {
+			return bos;
+		}
+	}
+	// wrapper class - compiler will use this 'FileManager' to manage compiler output
+	private static class ByteArrayFileManager extends ForwardingJavaFileManager<JavaFileManager> {
+		ByteArrayJavaFileObject byteArrayJavaFileObject;
+		ByteArrayFileManager(StandardJavaFileManager standardJavaFileManager,
+							 ByteArrayJavaFileObject byteArrayJavaFileObject) {
+			super(standardJavaFileManager);
+			this.byteArrayJavaFileObject = byteArrayJavaFileObject;
+		}
+		@Override
+		public JavaFileObject getJavaFileForOutput(Location location, String name, JavaFileObject.Kind kind,
+												   FileObject sibling) throws IOException {
+			return byteArrayJavaFileObject;
 		}
 	}
 }

@@ -116,8 +116,8 @@ public class SimpleAckingTaskManagerGateway implements TaskManagerGateway {
 	}
 
 	@Override
-	public CompletableFuture<Acknowledge> updateOperator(ExecutionAttemptID executionAttemptID, Configuration updatedConfig, OperatorID operatorID, Time timeout) {
-		return null;
+	public CompletableFuture<Acknowledge> updateOperator(ExecutionAttemptID executionAttemptID, TaskDeploymentDescriptor tdd, OperatorID operatorID, Time timeout) {
+		return CompletableFuture.completedFuture(Acknowledge.get());
 	}
 
 	@Override

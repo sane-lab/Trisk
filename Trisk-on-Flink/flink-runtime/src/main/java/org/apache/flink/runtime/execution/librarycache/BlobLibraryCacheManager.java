@@ -22,6 +22,7 @@ import org.apache.flink.api.common.JobID;
 import org.apache.flink.runtime.blob.PermanentBlobKey;
 import org.apache.flink.runtime.blob.PermanentBlobService;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
+import org.apache.flink.util.ChildFirstClassLoader;
 import org.apache.flink.util.ExceptionUtils;
 
 import org.slf4j.Logger;
@@ -175,6 +176,59 @@ public class BlobLibraryCacheManager implements LibraryCacheManager {
 				throw new IllegalStateException("No libraries are registered for job " + jobId);
 			}
 			return entry.getClassLoader();
+		}
+	}
+
+	@Override
+	public ClassLoader updateClasspath(
+		JobID jobId,
+		Collection<PermanentBlobKey> requiredJarFiles,
+		Collection<URL> requiredClasspaths) throws IOException {
+
+		checkNotNull(jobId, "The JobId must not be null.");
+
+		if (requiredJarFiles == null) {
+			requiredJarFiles = Collections.emptySet();
+		}
+		if (requiredClasspaths == null) {
+			requiredClasspaths = Collections.emptySet();
+		}
+		synchronized (lockObject) {
+			LibraryCacheEntry entry = cacheEntries.get(jobId);
+
+			if (entry != null) {
+				URL[] urls = new URL[requiredJarFiles.size() + requiredClasspaths.size()];
+				int count = 0;
+				try {
+					// add URLs to locally cached JAR files
+					for (PermanentBlobKey key : requiredJarFiles) {
+						urls[count] = blobService.getFile(jobId, key).toURI().toURL();
+						++count;
+					}
+					// add classpaths
+					for (URL url : requiredClasspaths) {
+						urls[count] = url;
+						++count;
+					}
+					if(entry.updateClasspath(urls)){
+						entry.libraries.addAll(requiredJarFiles);
+						entry.classPaths.addAll(requiredClasspaths.stream()
+							.map(URL::toString)
+							.collect(Collectors.toList())
+						);
+						return entry.getClassLoader();
+					}else{
+						throw new UnsupportedOperationException("can not update classpath for this classloader");
+					}
+				} catch (Throwable t) {
+					// rethrow or wrap
+					ExceptionUtils.tryRethrowIOException(t);
+					throw new IOException(
+						"Library cache could not register the user code libraries.", t);
+				}
+			}else {
+				throw new IOException("can not found this job with id " + jobId);
+			}
 		}
 	}
 
@@ -352,6 +406,17 @@ public class BlobLibraryCacheManager implements LibraryCacheManager {
 			} catch (IOException e) {
 				LOG.warn("Failed to release user code class loader for " + Arrays.toString(libraries.toArray()));
 			}
+		}
+
+		public boolean updateClasspath(URL[] urls) {
+			if(classLoader instanceof ChildFirstClassLoader){
+				ChildFirstClassLoader childFirstClassLoader = (ChildFirstClassLoader) this.classLoader;
+				for(URL url: urls) {
+					childFirstClassLoader.addURL(url);
+				}
+				return true;
+			}
+			return false;
 		}
 	}
 }

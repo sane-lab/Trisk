@@ -15,8 +15,6 @@ import static org.apache.flink.util.Preconditions.checkState;
 public class PerformanceEvaluator extends AbstractController {
 	private static final Logger LOG = LoggerFactory.getLogger(PerformanceEvaluator.class);
 
-	private final Object lock = new Object();
-	private final Profiler profiler;
 	private final Map<String, String> experimentConfig;
 
 	public final static String AFFECTED_TASK = "trisk.reconfig.affected_tasks";
@@ -36,33 +34,7 @@ public class PerformanceEvaluator extends AbstractController {
 
 	public PerformanceEvaluator(ReconfigurationExecutor reconfigurationExecutor, Configuration configuration) {
 		super(reconfigurationExecutor);
-		profiler = new Profiler();
 		experimentConfig = configuration.toMap();
-	}
-
-	@Override
-	public synchronized void startControllers() {
-		System.out.println("PerformanceMeasure is starting...");
-		profiler.setName("reconfiguration performance measure");
-		profiler.start();
-	}
-
-	@Override
-	public void stopControllers() {
-		System.out.println("PerformanceMeasure is stopping...");
-		finished = true;
-		profiler.interrupt();
-	}
-
-	@Override
-	public synchronized void onChangeCompleted(Throwable throwable) {
-		if (throwable != null) {
-			profiler.interrupt();
-			return;
-		}
-		synchronized (lock) {
-			lock.notify();
-		}
 	}
 
 	protected void generateTest() throws InterruptedException {
@@ -71,7 +43,7 @@ public class PerformanceEvaluator extends AbstractController {
 		int reconfigInterval = Integer.parseInt(experimentConfig.getOrDefault(RECONFIG_INTERVAL, "10000"));
 //		int reconfigFreq = Integer.parseInt(experimentConfig.getOrDefault(RECONFIG_FREQUENCY, "5"));
 		int testOpID = findOperatorByName(testOperatorName);
-		latestUnusedSubTaskIdx = getReconfigurationExecutor().getExecutionPlan().getParallelism(testOpID);
+		latestUnusedSubTaskIdx = getReconfigurationExecutor().getTrisk().getParallelism(testOpID);
 		switch (experimentConfig.getOrDefault(TEST_TYPE, RESCALE)) {
 			case REMAP:
 				measureRebalance(testOpID, numAffectedTasks, reconfigInterval);
@@ -90,41 +62,34 @@ public class PerformanceEvaluator extends AbstractController {
 	}
 
 	private void measureRebalance(int testOpID, int numAffectedTasks, int reconfigInterval) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 		if (reconfigInterval > 0) {
-//			int timeInterval = 1000 / reconfigInterval;
 			int i = 0;
 			long start;
 			while (true) {
-//			for (int i = 0; i < reconfigFreq; i++) {
 				start = System.currentTimeMillis();
-				Map<Integer, List<Integer>> keySet = executionPlan.getKeyStateAllocation(testOpID);
+				Map<Integer, List<Integer>> keyStateDistribution = executionPlan.getKeyStateDistribution(testOpID);
 				Map<Integer, List<Integer>> newKeySet = new HashMap<>();
-				for (Integer taskId : keySet.keySet()) {
-					newKeySet.put(taskId, new ArrayList<>(keySet.get(taskId)));
+				for (Integer taskId : keyStateDistribution.keySet()) {
+					newKeySet.put(taskId, new ArrayList<>(keyStateDistribution.get(taskId)));
 				}
 				// random select numAffectedTask sub key set, and then shuffle them to the same number of key set
 				shuffleKeySet(newKeySet, numAffectedTasks);
 				System.out.println("\nnumber of rebalance test: " + i);
 				System.out.println("new key set:" + newKeySet);
 
-				getReconfigurationExecutor().rebalance(testOpID, newKeySet, true, this);
-				waitForCompletion();
+//				getReconfigurationExecutor().rebalance(testOpID, newKeySet, true, this);
+//				waitForCompletion();
+				loadBalancing(testOpID, newKeySet);
 				while ((System.currentTimeMillis() - start) < reconfigInterval) {}
 				i++;
 			}
 		}
 	}
 
-	private void waitForCompletion() throws InterruptedException {
-		// wait for operation completed
-		synchronized (lock) {
-			lock.wait();
-		}
-	}
 
 	private void measureFunctionUpdate(int testOpID, int reconfigInterval) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 		try {
 			ClassLoader userClassLoader = executionPlan.getUserFunction(testOpID).getClass().getClassLoader();
 			Class IncreaseCommunicationOverheadMapClass = userClassLoader.loadClass("flinkapp.StatefulDemoLongRun$IncreaseCommunicationOverheadMap");
@@ -146,9 +111,10 @@ public class PerformanceEvaluator extends AbstractController {
 					}
 					System.out.println("\nnumber of function update test: " + i);
 					System.out.println("new function:" + func);
-					getReconfigurationExecutor().reconfigureUserFunction(testOpID, func, this);
-					// wait for operation completed
-					waitForCompletion();
+//					getReconfigurationExecutor().reconfigureUserFunction(testOpID, func, this);
+//					// wait for operation completed
+//					waitForCompletion();
+					changeOfLogic(testOpID, func);
 					while ((System.currentTimeMillis() - start) < timeInterval) {
 					}
 					i++;
@@ -160,7 +126,7 @@ public class PerformanceEvaluator extends AbstractController {
 	}
 
 	private void measureRescale(int testOpID, int numAffectedTasks, int reconfigInterval) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 		if (reconfigInterval > 0) {
 			long start;
 			// first scale in and then scale out to avoid exceed the parallelism set for the app,
@@ -181,42 +147,32 @@ public class PerformanceEvaluator extends AbstractController {
 	}
 
 	private void scaling(int testingOpID, int newParallelism) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
-		OperatorDescriptor targetDescriptor = executionPlan.getOperatorByID(testingOpID);
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 
+		Map<Integer, List<Integer>> keyStateDistribution = executionPlan.getKeyStateDistribution(testingOpID);
+		int oldParallelism = executionPlan.getParallelism(testingOpID);
+		assert oldParallelism == keyStateDistribution.size() : "old parallelism does not match the key set";
 
-		Map<Integer, List<Integer>> curKeyStateAllocation = targetDescriptor.getKeyStateDistribution();
-		int oldParallelism = targetDescriptor.getParallelism();
-		assert oldParallelism == curKeyStateAllocation.size() : "old parallelism does not match the key set";
-
-		Map<Integer, List<Integer>> newKeyStateAllocation = preparePartitionAssignment(newParallelism);
+		Map<Integer, List<Integer>> newKeyStateDistribution = preparePartitionAssignment(newParallelism);
 
 		int maxParallelism = 128;
 
 		for (int i = 0; i < maxParallelism; i++) {
-			newKeyStateAllocation.get(i%newParallelism).add(i);
+			newKeyStateDistribution.get(i%newParallelism).add(i);
 		}
 
 		// update the parallelism
-		targetDescriptor.setParallelism(newParallelism);
-		boolean isScaleIn = oldParallelism > newParallelism;
+		executionPlan.setParallelism(testingOpID, newParallelism);
 
-		// update the key set
-		for (OperatorDescriptor parent : targetDescriptor.getParents()) {
-			parent.updateKeyMapping(testingOpID, newKeyStateAllocation);
-		}
-
-		System.out.println(newKeyStateAllocation);
+		System.out.println(newKeyStateDistribution);
 
 		if (oldParallelism == newParallelism) {
-//			getReconfigurationExecutor().rebalance(testingOpID, newKeyStateAllocation, true, this);
-			getReconfigurationExecutor().rebalance(executionPlan, testingOpID, this);
+//			getReconfigurationExecutor().rebalance(executionPlan, testingOpID, this);
+			loadBalancing(testingOpID, newKeyStateDistribution);
 		} else {
-//			getReconfigurationExecutor().rescale(testingOpID, newParallelism, newKeyStateAllocation, this);
-			getReconfigurationExecutor().rescale(executionPlan, testingOpID, isScaleIn, this);
+//			getReconfigurationExecutor().rescale(executionPlan, testingOpID, isScaleIn, this);
+			scaling(testingOpID, newKeyStateDistribution, null);
 		}
-
-		waitForCompletion();
 	}
 
 	private Map<Integer, List<Integer>> preparePartitionAssignment(int parallleism) {
@@ -228,7 +184,7 @@ public class PerformanceEvaluator extends AbstractController {
 	}
 
 	private void measureRescale(int testOpID, int numAffectedTasks, int maxParallelism, int reconfigInterval) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 		if (reconfigInterval > 0) {
 //			int timeInterval = 1000 / reconfigInterval;
 			int i = 0;
@@ -261,9 +217,10 @@ public class PerformanceEvaluator extends AbstractController {
 				LOG.info("++++++number of rescale test: " + i + " type: " + (isScaleOut? "scale_out" : "scale_in"));
 				LOG.info("++++++new key set: " + newKeySet);
 
-				getReconfigurationExecutor().rescale(testOpID, newParallelism, newKeySet, this);
-				// wait for operation completed
-				waitForCompletion();
+//				getReconfigurationExecutor().rescale(testOpID, newParallelism, newKeySet, this);
+//				// wait for operation completed
+//				waitForCompletion();
+				scaling(testOpID, newKeySet, null);
 				while ((System.currentTimeMillis() - start) < reconfigInterval) {
 					// busy waiting
 				}
@@ -273,7 +230,7 @@ public class PerformanceEvaluator extends AbstractController {
 	}
 
 	private void measureNoOP(int testOpID, int reconfigInterval) throws InterruptedException {
-		ExecutionPlan executionPlan = getReconfigurationExecutor().getExecutionPlan();
+		ExecutionPlan executionPlan = getReconfigurationExecutor().getTrisk();
 		if (reconfigInterval > 0) {
 //			int timeInterval = 1000 / reconfigInterval;
 			int i = 0;
@@ -282,9 +239,9 @@ public class PerformanceEvaluator extends AbstractController {
 //			for (int i = 0; i < reconfigFreq; i++) {
 				start = System.currentTimeMillis();
 				System.out.println("\nnumber of noop test: " + i);
-				getReconfigurationExecutor().noOp(testOpID, this);
+//				getReconfigurationExecutor().noOp(testOpID, this);
 				// wait for operation completed
-				waitForCompletion();
+//				waitForCompletion();
 				if (System.currentTimeMillis() - start > reconfigInterval) {
 					System.out.println("overloaded frequency");
 				}
@@ -416,30 +373,20 @@ public class PerformanceEvaluator extends AbstractController {
 		);
 	}
 
-	private void testNoOp(int operatorID) throws InterruptedException {
-
-		getReconfigurationExecutor().noOp(operatorID, this);
-
-		waitForCompletion();
-	}
-
-	private class Profiler extends Thread {
-
-		@Override
-		public void run() {
-			// the testing jobGraph (workload) is in TestingWorkload.java, see that file to know how to use it.
-			try {
-				Thread.sleep(30000);
-				generateTest();
-				Thread.sleep(3000);
-			} catch (InterruptedException e) {
-				if (finished) {
-					System.err.println("PerformanceEvaluator stopped");
-					return;
-				}
-				e.printStackTrace();
-				System.err.println("interrupted, thread exit");
+	@Override
+	public void defineControlAction() {
+		// the testing jobGraph (workload) is in TestingWorkload.java, see that file to know how to use it.
+		try {
+			Thread.sleep(10000);
+			generateTest();
+			Thread.sleep(3000);
+		} catch (InterruptedException e) {
+			if (finished) {
+				System.err.println("PerformanceEvaluator stopped");
+				return;
 			}
+			e.printStackTrace();
+			System.err.println("interrupted, thread exit");
 		}
 	}
 

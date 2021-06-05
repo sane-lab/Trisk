@@ -94,7 +94,7 @@ public interface TaskManagerGateway {
 	 */
 	CompletableFuture<Acknowledge> updateOperator(
 		ExecutionAttemptID executionAttemptID,
-		Configuration updatedConfig,
+		TaskDeploymentDescriptor tdd,
 		OperatorID operatorID,
 		Time timeout);
 

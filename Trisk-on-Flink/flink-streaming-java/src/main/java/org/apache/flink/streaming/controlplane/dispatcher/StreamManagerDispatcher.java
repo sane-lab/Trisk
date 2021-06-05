@@ -117,7 +117,7 @@ public abstract class StreamManagerDispatcher extends PermanentlyFencedRpcEndpoi
 		this.fatalErrorHandler = dispatcherServices.getFatalErrorHandler();
 		this.jobGraphWriter = dispatcherServices.getJobGraphWriter();
 
-		this.jobManagerSharedServices = JobManagerSharedServices.fromConfiguration(
+		this.jobManagerSharedServices = JobManagerSharedServices.fromConfigurationForStreamManager(
 			configuration,
 			blobServer);
 
@@ -316,6 +316,7 @@ public abstract class StreamManagerDispatcher extends PermanentlyFencedRpcEndpoi
 					highAvailabilityServices, //highAvailabilityServices,
 					dispatcherGatewayRetriever, //heartbeatServices,
 					jobManagerSharedServices.getLibraryCacheManager(),
+					jobManagerSharedServices.getBlobWriter(),
 					fatalErrorHandler //fatalErrorHandler
 				)),
 			rpcService.getExecutor());
