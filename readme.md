@@ -27,7 +27,7 @@ To explore our source code, you can try to start from `StreamManager.java`, whic
 1. Compile `Trisk-on-Flink` with : `mvn clean install -DskipTests -Dcheckstyle.skip -Drat.skip=true`.
 2. Compile `examples` with: `mvn clean package`.
 3. cd `Trisk-on-Flink/build-target`  and start a standalone cluster: `./bin/start-cluster.sh`.
-4. lunch a example `StatefulDemo`  in  examples folder: `./bin/flink run -c flinkapp.StatefulDemo `
+4. Launch an example `StatefulDemo`  in  examples folder: `./bin/flink run -c flinkapp.StatefulDemo `
 5. Try Trisk with the following command: `examples/target/testbed-1.0-SNAPSHOT.jar`.
 
 We have placed Trisk into the Flink, and uses Flink configuration tools to configure the parameters of Tirsk. There are some configurations you can try in `flink-conf.yaml` to use the `Trisk-on-Flink`:
@@ -63,7 +63,7 @@ Each experiment script requires some configurations:
 
 | Variable      | Default              | Description                        |
 | ------------- | -------------------- | ---------------------------------- |
-| FLINK_DIR     | "/path/to/Flink"     | path to compiled  `Flink-on-Trisk` |
+| FLINK_DIR     | "/path/to/Flink"     | path to compiled  `Trisk-on-Flink` |
 | FLINK_APP_DIR | "/path/to/Flink_app" | path to the compiled `example`     |
 | EXP_DIR       | "/data"              | path for the raw data output       |
 
@@ -73,4 +73,5 @@ For scripts to draw figures:
 | ------------- | --------------- | ---------------------- |
 | FIGURE_FOLDER | '/data/results' | path to output figures |
 | FILE_FOLER    | '/data/raw'     | path to read raw data  |
+
 
