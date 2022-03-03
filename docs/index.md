@@ -1,37 +1,77 @@
-## Welcome to GitHub Pages
+# Trisk
+Trisk is a control plane to provide reconfigurations with versatility, efficiency and usability.
 
-You can use the [editor on GitHub](https://github.com/sane-lab/Trisk/edit/main/docs/index.md) to maintain and preview the content for your website in Markdown files.
+Trisk stores its abstraction at `TriskAbstractionImpl.java`, in which Trisk also encapsulates APIs to apply primitive operations.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+Trisk controllers are implemented in `XXController.java`, and all currently supported controllers can be found in `StreamManager.java`.
 
-### Markdown
+## Prerequisite
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+1. Python3
+2. Zookeeper
+3. Kafka
+4. Java 1.8
 
-```markdown
-Syntax highlighted code block
+## Code architecture
 
-# Header 1
-## Header 2
-### Header 3
+The source code of `Trisk` has been placed into `Flink`, because Flink has network stack for us to achieve RPC among our components.
 
-- Bulleted
-- List
+The main source code entrypoint is in `flink-streaming-java/controlplane`.
 
-1. Numbered
-2. List
+To explore our source code, you can try to start from `StreamManager.java`, which is the main component to connect other components.
 
-**Bold** and _Italic_ and `Code` text
+## How to use?
 
-[Link](url) and ![Image](src)
-```
+### Run an example
 
-For more details see [Basic writing and formatting syntax](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax).
+1. Compile `Trisk-on-Flink` with : `mvn clean install -DskipTests -Dcheckstyle.skip -Drat.skip=true`.
+2. Compile `examples` with: `mvn clean package`.
+3. cd `Trisk-on-Flink/build-target`  and start a standalone cluster: `./bin/start-cluster.sh`.
+4. Launch an example `StatefulDemo`  in  examples folder: `./bin/flink run -c flinkapp.StatefulDemo `
+5. Try Trisk with the following command: `examples/target/testbed-1.0-SNAPSHOT.jar`.
 
-### Jekyll Themes
+We have placed Trisk into the Flink, and uses Flink configuration tools to configure the parameters of Tirsk. There are some configurations you can try in `flink-conf.yaml` to use the `Trisk-on-Flink`:
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/sane-lab/Trisk/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+| Parameter                     | Default              | Description                                                  |
+| ----------------------------- | -------------------- | ------------------------------------------------------------ |
+| trisk.controller              | PerformanceEvaluator | the performance controller tries to run a reconfiguration per 10s on an operator |
+| trisk.reconfig.operator.name  | Splitter FlatMap     | the operator to reconfigure                                  |
+| trisk.reconfig.interval       | 10000                | interval between two reconfigurations (ms)                   |
+| trisk.reconfig.affected_tasks | 2                    | affected tasks for a reconfiguration (this parameter has no effect on change of logic) |
+| trisk.exp.dir                 | /data                | the folder to output metrics measured during the execution.  |
 
-### Support or Contact
+### Design and run a controller
 
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+To design a controller, we have two ways as illustrated in paper.
+
+1. create a `XXcontroller.java`  in `udm` folder of Trisk project, and compile the `Trisk-on-Flink` to have a try.
+2. submit your `XXController.java` via a restful API, which is listening on port `8520`. For more details, please refer to our scripts to submit the source code: 
+
+## Run scripts for experiments
+
+In this project, we have mainly run experiments on three systems as illustrated in our paper:
+
+1. Trisk experiment
+2. Flink experiment
+3. Megaphone experiment
+
+We have placed our scripts to run the experiments in `scripts` folder, in which there mainly four sub-folders, `flink_reconfig`, `megaphone_reconfig`, and `trisk_reconfig` contains scripts to run the corresponding experiments of each system.
+
+`analysis` contains the analysis scripts to process raw data and draw figures shown in our paper.
+
+Each experiment script requires some configurations:
+
+| Variable      | Default              | Description                        |
+| ------------- | -------------------- | ---------------------------------- |
+| FLINK_DIR     | "/path/to/Flink"     | path to compiled  `Trisk-on-Flink` |
+| FLINK_APP_DIR | "/path/to/Flink_app" | path to the compiled `example`     |
+| EXP_DIR       | "/data"              | path for the raw data output       |
+
+For scripts to draw figures:
+
+| Variable      | Default         | Description            |
+| ------------- | --------------- | ---------------------- |
+| FIGURE_FOLDER | '/data/results' | path to output figures |
+| FILE_FOLER    | '/data/raw'     | path to read raw data  |
+
+
